@@ -1,6 +1,6 @@
 """Stage 3 server — validation guardrail with one retry and force_bad demo knob.
 
-Run: uvicorn serve_stage3:app --port 8000 --reload
+Run: uvicorn serve_stage3_HTTPerror:app --port 8000 --reload
 """
 
 from pathlib import Path
