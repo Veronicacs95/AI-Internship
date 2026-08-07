@@ -85,27 +85,9 @@ def call_ask(base_url: str, payload: dict) -> tuple[int, dict | str]:
         return 0, {"error": str(exc)}
 
 
-def render_curl(base_url: str, payload: dict) -> str:
-    body = json.dumps(payload)
-    return (
-        f'curl -s -X POST {base_url.rstrip("/")}/ask '
-        f'-H "Content-Type: application/json" -d \'{body}\''
-    )
-
-
-def render_terminal_block(stage: dict, base_url: str, payload: dict) -> str:
-    return f"""cd {WORKDIR_CMD}
-source .venv/bin/activate
-pip install -r requirements.txt
-{stage["serve"]}
-
-# In another terminal — test this stage:
-{render_curl(base_url, payload)}"""
-
 
 st.set_page_config(page_title="Week 1 /ask Demo", layout="wide")
 st.title("Week 1 — `/ask` Demo Runner")
-st.caption("One page, five sections. Copy the commands below, start the matching server, then hit **Run test**.")
 
 default_api_url = (
     os.getenv("API_BASE_URL")
@@ -159,8 +141,6 @@ for tab, stage in zip(tabs, STAGES):
 
         payload = build_payload(stage_question, stage, force_bad, model)
 
-        st.markdown("**Copy & run (terminal 1 — server, terminal 2 — curl):**")
-        st.code(render_terminal_block(stage, base_url, payload), language="bash")
 
         if st.button("Run test", key=f"run_{stage['num']}", type="primary"):
             with st.spinner("Calling /ask..."):
