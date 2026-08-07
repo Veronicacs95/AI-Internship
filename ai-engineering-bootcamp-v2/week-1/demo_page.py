@@ -5,7 +5,7 @@ Run this page:
 """
 
 import json
-
+import os
 import httpx
 import streamlit as st
 
@@ -107,7 +107,15 @@ st.set_page_config(page_title="Week 1 /ask Demo", layout="wide")
 st.title("Week 1 — `/ask` Demo Runner")
 st.caption("One page, five sections. Copy the commands below, start the matching server, then hit **Run test**.")
 
-base_url = st.sidebar.text_input("API base URL", "http://127.0.0.1:8000")
+default_api_url = (
+    os.getenv("API_BASE_URL")
+    or "http://127.0.0.1:8000"
+)
+
+base_url = st.sidebar.text_input(
+    "API base URL",
+    default_api_url
+)
 
 st.sidebar.markdown("### Run this page")
 st.sidebar.code(
