@@ -232,8 +232,6 @@ week-1/
 - Never commit `.env` to GitHub.
 - Commit only `.env.example`.
 - Store production secrets using Render Environment Variables.
-```
-
 
 ---
 
