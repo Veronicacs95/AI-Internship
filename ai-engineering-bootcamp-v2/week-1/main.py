@@ -1,5 +1,7 @@
 """Week 1 live demo — five stages in one file, built up live in class."""
 
+import os
+import re
 import time
 from pathlib import Path
 
@@ -7,17 +9,10 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from openai import OpenAI
 from pydantic import BaseModel, Field, ValidationError
-
-import os
 from pinecone import Pinecone
-
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-
-import re
-from langchain_openai import OpenAIEmbeddings
-
 
 
 
