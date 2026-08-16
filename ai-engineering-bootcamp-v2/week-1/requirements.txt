@@ -2,6 +2,11 @@ fastapi[standard]
 openai>=1.0.0
 python-dotenv>=1.0.0
 pinecone
+langchain
 langchain-openai
 langchain-text-splitters
+langchain-community
 streamlit
+pypdf
+python-dotenv
+ragas
