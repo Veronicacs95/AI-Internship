@@ -1,0 +1,115 @@
+# NovaTech Retail — Inventory Coverage & Weeks of Supply Policy
+
+Author: Supply Planning Operations
+Document ID: POL-101
+Effective date: 2026-01-01
+Last review: 2026-06-01
+Next review: 2027-01-01
+Classification: Internal
+Owner: Supply Planning
+Approver: Director of Operations
+Related: POL-102, POL-103, POL-104
+
+## 1. Purpose
+
+This policy defines NovaTech Retail's inventory coverage standards and the use of Weeks of Supply (WOS) for assessing inventory health.
+
+The purpose of these standards is to provide a consistent method for identifying products that are below target coverage, at risk of stockout, within a healthy inventory range, or potentially overstocked.
+
+## 2. Scope
+
+This policy applies to all active products managed through NovaTech Retail's standard replenishment process.
+
+For the current planning model, inventory and demand are evaluated as a single combined inventory pool across NovaTech's retail and online channels.
+
+Unless otherwise specified by another approved policy, WOS is the primary inventory coverage indicator used for routine supply planning.
+
+## 3. Weeks of Supply
+
+Weeks of Supply represents the number of weeks that available inventory is expected to support demand at the current planning rate.
+
+For standard planning purposes:
+
+**WOS = Available Inventory / Average Weekly Demand**
+
+For example, if a product has 600 units of available inventory and average weekly demand of 150 units:
+
+**WOS = 600 / 150 = 4 weeks**
+
+The product therefore has four weeks of current inventory coverage.
+
+## 4. Standard Inventory Coverage
+
+NovaTech's standard target inventory coverage is **4 to 6 weeks of supply**.
+
+Products within the 4–6 WOS range are normally considered to have a healthy inventory position, provided there are no known material changes to demand, incoming supply, or supplier availability.
+
+The standard inventory coverage bands are:
+
+* **Below 2 WOS:** Critical
+* **2 to below 4 WOS:** Below target
+* **4 to 6 WOS:** Target range
+* **Above 6 to 8 WOS:** Above target
+* **Above 8 WOS:** Potential overstock
+
+These thresholds are planning indicators and do not, by themselves, authorize a purchase-order change.
+
+## 5. Below-Target Inventory
+
+A product with less than **4 WOS** is considered below the standard inventory target and should be reviewed.
+
+A below-target position indicates that current inventory coverage may be insufficient to maintain the desired stock level.
+
+A product being below target does **not automatically mean that additional supply should be ordered**.
+
+Before changing the replenishment plan, the planner must consider relevant factors including expected demand, confirmed incoming supply, open purchase orders, and supplier lead time in accordance with the related planning policies.
+
+## 6. Critical Inventory
+
+A product with less than **2 WOS** is classified as critical inventory.
+
+Critical products should receive priority planning review because the available inventory may be consumed before replacement supply becomes available.
+
+Critical status identifies supply risk; it does not automatically require an expedited order. The timing of incoming supply and the expected stockout position must also be considered.
+
+## 7. Above-Target Inventory
+
+A product with more than **6 WOS** is considered above the standard target range.
+
+A position between more than 6 WOS and 8 WOS does not automatically represent excess inventory, but planners should monitor the product for changes in demand or incoming supply that could increase future coverage.
+
+## 8. Potential Overstock
+
+A product with more than **8 WOS** is classified as potential overstock.
+
+Potential overstock should trigger a review of expected demand and future incoming supply.
+
+Where appropriate, planners should evaluate whether future replenishment can be reduced or delayed. Any change to an existing purchase order must follow the applicable replenishment and purchase-order policies.
+
+## 9. Use of WOS in Planning Decisions
+
+WOS must not be used in isolation to make replenishment decisions.
+
+Current WOS describes the present inventory position but does not necessarily describe the future inventory position.
+
+For example, a product may currently have only 2 WOS but also have a confirmed purchase order arriving before the existing inventory is expected to run out. In that situation, placing another order solely because current WOS is low could create excess inventory.
+
+Supply-planning decisions should therefore consider, where relevant:
+
+* available inventory;
+* expected weekly demand;
+* demand forecast;
+* confirmed incoming supply;
+* open purchase orders; and
+* supplier lead time.
+
+The treatment of these factors is defined in the related NovaTech planning policies.
+
+## 10. Policy Summary
+
+NovaTech uses WOS as its standard inventory coverage indicator.
+
+The normal target is **4–6 WOS**. Inventory below **4 WOS** requires review, inventory below **2 WOS** is considered critical, and inventory above **8 WOS** is considered potential overstock.
+
+WOS is a planning signal rather than an automatic replenishment instruction. Purchase-order decisions must consider the future supply and demand position before action is taken.
+

@@ -1,0 +1,168 @@
+# NovaTech Retail — Replenishment Decision Policy
+
+Author: Supply Planning Operations
+Document ID: POL-103
+Effective date: 2026-01-01
+Last review: 2026-06-01
+Next review: 2027-01-01
+Classification: Internal
+Owner: Supply Planning
+Approver: Director of Operations
+Related: POL-101, POL-102, POL-104, POL-105, POL-106
+
+## 1. Purpose
+
+This policy defines how NovaTech Retail evaluates replenishment requirements and determines whether planned supply should be increased, maintained, reduced, or delayed.
+
+The objective is to maintain sufficient inventory to support expected customer demand while limiting unnecessary excess inventory.
+
+## 2. Scope
+
+This policy applies to all active products managed through NovaTech Retail's standard replenishment process.
+
+For the current planning model, inventory and demand from NovaTech's online and physical retail channels are managed as a single combined planning position for each SKU.
+
+Replenishment decisions are made at SKU level.
+
+## 3. Replenishment Assessment
+
+Replenishment decisions must be based on the expected future inventory position rather than current inventory alone.
+
+The planner should consider, where relevant:
+
+* available inventory;
+* approved demand forecast;
+* recent actual sales;
+* current Weeks of Supply;
+* confirmed incoming supply;
+* open purchase orders;
+* expected supply arrival dates;
+* supplier lead time; and
+* applicable supplier ordering constraints.
+
+Weeks of Supply thresholds must be interpreted according to POL-101.
+
+Demand and forecast signals must be interpreted according to POL-102.
+
+## 4. Projected Inventory Position
+
+Before changing replenishment, planners should assess whether current inventory and confirmed incoming supply are expected to support demand over the relevant planning horizon.
+
+For basic planning purposes:
+
+**Projected Available Supply = Current Available Inventory + Confirmed Incoming Supply**
+
+Expected demand during the relevant period must then be considered against the projected available supply.
+
+A low current inventory position does not necessarily indicate a need for additional replenishment if sufficient confirmed supply is already expected to arrive before inventory is exhausted.
+
+Similarly, a healthy current inventory position may still require additional replenishment if future demand is expected to consume inventory before replacement supply can arrive.
+
+## 5. Increase Replenishment
+
+An increase in replenishment should be considered when the projected inventory position is expected to fall below NovaTech's target coverage range and existing confirmed incoming supply is insufficient to restore coverage.
+
+Factors supporting an increase may include:
+
+* projected WOS remaining below the 4–6 week target range;
+* sustained demand above the approved forecast;
+* insufficient confirmed incoming supply;
+* expected stockout before the next feasible replenishment arrival; or
+* an increase in the approved demand forecast.
+
+A recommendation to increase replenishment must also consider supplier lead time and applicable ordering constraints.
+
+Being below the target WOS range alone does not automatically require an additional purchase order.
+
+## 6. Maintain Replenishment
+
+The existing replenishment plan should normally be maintained when projected inventory is expected to remain within the target coverage range and no significant change in demand or supply is identified.
+
+Maintaining the plan may also be appropriate when current WOS is below target but confirmed incoming supply is expected to restore inventory coverage within an acceptable timeframe.
+
+Planners should avoid placing additional orders solely to correct a temporary low inventory position when sufficient replacement supply is already confirmed.
+
+## 7. Reduce Replenishment
+
+A reduction in future replenishment should be considered when projected inventory is expected to materially exceed expected demand and create potential overstock.
+
+Factors supporting a reduction may include:
+
+* projected WOS exceeding 8 weeks;
+* sustained actual demand below forecast;
+* a downward revision to the approved forecast;
+* excessive confirmed incoming supply; or
+* multiple open purchase orders creating unnecessary future inventory.
+
+Any proposed reduction must consider whether existing purchase orders can still be modified under the applicable supplier terms.
+
+## 8. Delay Replenishment
+
+A delay should be considered when additional supply is still expected to be required but the currently planned arrival would create an unnecessarily high inventory position.
+
+For example, a purchase order may be suitable for delay when:
+
+* projected inventory exceeds the target coverage range before the PO arrival;
+* the product is expected to return to the target range at a later date;
+* the supplier permits the delivery date to be changed; and
+* delaying the order does not create a future stockout risk.
+
+Delaying a purchase order is different from cancelling or reducing it. The quantity remains required, but the planned arrival is moved to a later date.
+
+## 9. Decision Priority
+
+When evaluating replenishment, planners should prioritize avoiding stockout risk while also limiting unnecessary excess inventory.
+
+The standard decision sequence is:
+
+1. Determine the current inventory position.
+2. Review the approved demand forecast and relevant recent sales.
+3. Identify confirmed incoming supply and expected arrival dates.
+4. Assess projected inventory coverage.
+5. Identify potential stockout or overstock risk.
+6. Determine whether replenishment should be increased, maintained, reduced, or delayed.
+7. Validate the proposed action against supplier ordering constraints and lead time.
+
+## 10. Replenishment Recommendations
+
+A replenishment recommendation should clearly state the proposed action and the main evidence supporting it.
+
+The standard recommendation categories are:
+
+* **Increase** — additional supply should be considered.
+* **Maintain** — the current replenishment plan remains appropriate.
+* **Reduce** — less future supply is expected to be required.
+* **Delay** — the quantity may still be required, but at a later date.
+
+Recommendations should explain the relevant inventory, demand, and incoming-supply conditions rather than relying only on the final category.
+
+## 11. Exceptions and Planner Review
+
+Replenishment policies provide a standard planning framework but cannot account for every business situation.
+
+Products affected by significant promotions, launches, discontinuations, unusual supplier constraints, or exceptional demand events may require additional planner review.
+
+Where available information is insufficient to determine the appropriate replenishment action, the planner should not make an unsupported recommendation.
+
+## 12. Planning Principle
+
+Replenishment decisions should be forward-looking.
+
+NovaTech does not increase supply simply because inventory is currently low, nor reduce supply simply because inventory is currently high.
+
+The appropriate decision depends on the expected inventory position after considering future demand, confirmed incoming supply, arrival timing, supplier lead time, and ordering constraints.
+
+## 13. Policy Summary
+
+NovaTech uses four standard replenishment recommendation categories: **Increase, Maintain, Reduce, and Delay**.
+
+An increase should be considered when projected coverage remains below target and existing incoming supply is insufficient.
+
+The current plan should normally be maintained when projected coverage remains healthy or confirmed incoming supply is sufficient to restore coverage.
+
+A reduction should be considered when projected inventory creates material overstock risk.
+
+A delay should be considered when supply remains necessary but its current arrival timing would create unnecessary excess inventory.
+
+No replenishment action should be based on current WOS alone.
+

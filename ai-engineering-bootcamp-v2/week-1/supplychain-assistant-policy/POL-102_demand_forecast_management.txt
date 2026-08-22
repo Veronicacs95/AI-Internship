@@ -1,0 +1,149 @@
+# NovaTech Retail — Demand & Forecast Management Policy
+
+Author: Demand Planning Operations
+Document ID: POL-102
+Effective date: 2026-01-01
+Last review: 2026-06-01
+Next review: 2027-01-01
+Classification: Internal
+Owner: Demand Planning
+Approver: Director of Operations
+Related: POL-101, POL-103, POL-104
+
+## 1. Purpose
+
+This policy defines how NovaTech Retail uses demand forecasts and historical sales to support inventory and supply-planning decisions.
+
+The objective is to provide a consistent forward-looking demand signal for calculating inventory coverage, identifying changes in demand, and supporting replenishment planning.
+
+## 2. Scope
+
+This policy applies to all active products managed through NovaTech Retail's standard forecasting and replenishment process.
+
+For the current planning model, demand from NovaTech's online and physical retail channels is combined into a single weekly demand forecast for each SKU.
+
+Forecasts are maintained at SKU and week level.
+
+## 3. Primary Demand Signal
+
+The **approved weekly demand forecast** is NovaTech's primary forward-looking demand signal for supply planning.
+
+The approved forecast represents the expected quantity of a product that NovaTech anticipates selling during each future week.
+
+Supply-planning calculations that require expected future demand should use the approved forecast unless an approved forecast adjustment has been made.
+
+Historical sales must not automatically replace the approved forecast.
+
+## 4. Weekly Forecast
+
+Each active SKU should have an approved forecast expressed as expected units per week.
+
+For example, if the approved forecast for a product is 150 units per week, the expected demand over four weeks is:
+
+**4-week expected demand = 150 × 4 = 600 units**
+
+Where weekly forecasts differ across the planning horizon, planners should use the forecast associated with each individual week rather than assuming demand is constant.
+
+## 5. Historical Sales
+
+Historical sales represent actual units sold during completed periods.
+
+Historical sales should be used to evaluate whether actual customer demand is developing differently from the approved forecast.
+
+Recent sales performance is a supporting planning signal and should not automatically override the approved forecast.
+
+A single unusually high or low sales week should not normally result in an immediate forecast change without additional evidence.
+
+## 6. Forecast Variance
+
+Forecast variance should be reviewed when recent actual sales materially differ from the approved forecast.
+
+For standard planning review, a difference of more than **20% between average actual weekly sales over the most recent four completed weeks and the corresponding average weekly forecast** is considered a material variance.
+
+For example:
+
+* Average weekly forecast: 100 units
+* Average actual weekly sales: 125 units
+* Variance: +25%
+
+This represents a material positive variance and should trigger forecast review.
+
+A material variance does not automatically change the approved forecast. The planner should determine whether the difference represents a sustained change in demand or a temporary event.
+
+## 7. Demand Increases
+
+When recent actual sales are consistently above forecast, planners should investigate the reason for the increase.
+
+Potential causes may include:
+
+* sustained growth in customer demand;
+* promotional activity;
+* seasonal demand;
+* product launches;
+* competitor activity; or
+* temporary sales events.
+
+If the higher demand is expected to continue, the forecast should be reviewed and adjusted through the approved forecasting process.
+
+Supply decisions should not rely solely on an isolated demand spike.
+
+## 8. Demand Decreases
+
+When recent actual sales are consistently below forecast, planners should review whether expected future demand remains realistic.
+
+A sustained reduction in demand may increase future inventory coverage and create overstock risk if incoming supply continues according to the previous forecast.
+
+Where lower demand is expected to continue, the forecast should be reviewed before additional replenishment is committed.
+
+## 9. Forecast and Weeks of Supply
+
+Weeks of Supply calculations should use the demand signal appropriate to the planning question.
+
+For a simple current coverage assessment, the approved average weekly forecast may be used:
+
+**WOS = Available Inventory / Approved Average Weekly Forecast**
+
+For forward-looking supply analysis, the weekly forecast should be considered across the relevant future planning horizon.
+
+WOS results should therefore be interpreted together with forecast changes and incoming supply rather than treated as a static measure.
+
+Inventory coverage thresholds are defined in POL-101.
+
+## 10. Forecast Review
+
+Forecasts should be reviewed regularly for products showing significant differences between actual and expected demand.
+
+Priority should be given to products that:
+
+* have a material forecast variance;
+* are below the target inventory coverage range;
+* are classified as critical inventory;
+* show potential overstock; or
+* have significant incoming supply scheduled.
+
+A forecast review may result in the forecast being maintained, increased, or decreased.
+
+## 11. Planning Principle
+
+Forecasts represent expected future demand and are inherently uncertain.
+
+The approved forecast should provide the standard demand baseline, while actual sales provide evidence about whether that expectation remains reasonable.
+
+Supply planners should therefore use both signals appropriately:
+
+**Forecast tells NovaTech what it expects to sell.**
+
+**Actual sales tell NovaTech what it has actually sold.**
+
+A difference between the two should trigger investigation when material, but should not automatically trigger a supply or forecast change.
+
+## 12. Policy Summary
+
+NovaTech uses the **approved weekly forecast as the primary forward-looking demand signal** for supply planning.
+
+Historical sales are used to evaluate forecast performance and identify potential changes in demand.
+
+A variance greater than **20% between the most recent four-week average actual sales and the corresponding average forecast** is considered material and should trigger forecast review.
+
+Historical sales do not automatically replace the approved forecast, and isolated demand spikes should not automatically result in forecast or replenishment changes.
+
