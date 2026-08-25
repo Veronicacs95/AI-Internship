@@ -14,6 +14,9 @@ from pinecone import Pinecone
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 
+import psycopg
+
+from db_tools import (get_inventory, get_product_data, get_supplier_data, get_forecast, get_sales_history, get_open_pos)
 
 
 ## --------------------------------------------------
@@ -23,28 +26,21 @@ from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 _ENV_PATH = Path(__file__).resolve().parent / ".env"
 load_dotenv(_ENV_PATH)
 
+PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME","week2-rag",)
 
-PINECONE_INDEX_NAME = os.getenv(
-    "PINECONE_INDEX_NAME",
-    "week2-rag",
-)
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL","text-embedding-3-small",)
 
-EMBEDDING_MODEL = os.getenv(
-    "EMBEDDING_MODEL",
-    "text-embedding-3-small",
-)
+EMBEDDING_DIMENSIONS = int(os.getenv("EMBEDDING_DIMENSIONS", "512"))
 
-EMBEDDING_DIMENSIONS = int(
-    os.getenv("EMBEDDING_DIMENSIONS", "512")
-)
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "800"))
 
-CHUNK_SIZE = int(
-    os.getenv("CHUNK_SIZE", "800")
-)
+CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "100"))
 
-CHUNK_OVERLAP = int(
-    os.getenv("CHUNK_OVERLAP", "100")
-)
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is not configured")
 
 # --------------------------------------------------
 # 2. CREATE CLIENTS
@@ -492,7 +488,7 @@ def ask(body: AskRequest) -> AskResponse:
 
 
 # --------------------------------------------------
-# 8.2 GET /health/pinecone
+# 8.2 GET /health/pinecone/db
 # --------------------------------------------------
 
 @app.get("/health/pinecone")
@@ -505,6 +501,23 @@ def pinecone_health():
         "dimension": stats.dimension,
         "total_vector_count": stats.total_vector_count,
     }
+
+
+@app.get("/health/db")
+def db_health():
+    try:
+        with psycopg.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT 1;")
+                result = cursor.fetchone()
+
+        return {
+            "status": "ok",
+            "database": "postgres",
+            "test_query": result[0],}
+
+    except Exception as exc:
+        raise HTTPException(status_code=500,detail=f"Database connection failed: {str(exc)}",)
 
 
 # --------------------------------------------------
@@ -599,3 +612,55 @@ def debug_retrieve(question: str,top_k: int = 5,):
     return retrieve_chunks(
         question=question,
         top_k=top_k,)
+
+
+
+
+
+# --------------------------------------------------
+# 8.3 GETT /DB Tool
+# --------------------------------------------------
+
+
+@app.get("/products/{sku}")
+def product_by_sku(sku: str):
+    result = get_product_data(sku)
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"SKU {sku} not found"
+        )
+
+    return result
+
+
+@app.get("/forecast/{sku}")
+def forecast_by_sku(sku: str):
+    return get_forecast(sku)
+
+
+@app.get("/sales/{sku}")
+def sales_by_sku(sku: str):
+    return get_sales_history(sku)
+
+
+@app.get("/purchase-orders/{sku}")
+def purchase_orders_by_sku(sku: str):
+    return get_open_pos(sku)
+
+
+@app.get("/suppliers/{supplier_id}")
+def supplier_by_id(supplier_id: str):
+    result = get_supplier_data(supplier_id)
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Supplier {supplier_id} not found"
+        )
+
+    return result
+
+
+
