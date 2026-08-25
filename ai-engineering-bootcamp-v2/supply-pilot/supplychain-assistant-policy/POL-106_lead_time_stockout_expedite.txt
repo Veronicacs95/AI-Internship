@@ -1,0 +1,396 @@
+# NovaTech Retail — Lead Time, Stockout Risk & Expedite Policy
+
+Author: Supply Planning Operations
+Document ID: POL-106
+Effective date: 2026-01-01
+Last review: 2026-06-01
+Next review: 2027-01-01
+Classification: Internal
+Owner: Supply Planning
+Approver: Director of Operations
+Related: POL-101, POL-103, POL-104, POL-105
+
+
+## 1. Purpose
+
+This policy defines how NovaTech Retail uses supplier lead time, projected
+inventory, projected stockout timing, and incoming-supply arrival dates to
+identify supply risk and determine when expedited supply should be considered.
+
+The objective is to identify situations where inventory may fall below the
+required planning position or be exhausted before replacement supply can become
+available, while avoiding unnecessary expedite actions and associated costs.
+
+
+## 2. Scope
+
+This policy applies to all active products managed through NovaTech Retail's
+standard replenishment process.
+
+For the current planning model, inventory and demand from NovaTech's online and
+physical retail channels are evaluated as a single combined planning position
+for each SKU.
+
+
+## 3. Supplier Lead Time
+
+Supplier lead time represents the expected time between placing a valid purchase
+order and the ordered supply becoming available to NovaTech.
+
+Lead time is measured in weeks for standard supply-planning purposes.
+
+Lead times may differ by SKU and supplier and must therefore be obtained from
+NovaTech's current approved product and supplier data.
+
+This policy defines how lead time should be interpreted; it does not define a
+single standard lead time for every product.
+
+
+## 4. Lead Time and Replenishment Planning
+
+Supplier lead time must be considered when evaluating the future inventory
+position of a SKU.
+
+Lead time must not be compared with current WOS alone. Planning decisions must
+consider the projected inventory position at the earliest feasible replenishment
+arrival date.
+
+The assessment should consider:
+
+* current available inventory;
+* approved forecast demand expected during the lead-time period;
+* confirmed incoming supply and its expected arrival dates; and
+* the inventory expected to remain when new replenishment becomes available.
+
+For example:
+
+* Available inventory: 600 units
+* Approved weekly forecast: 150 units
+* Current WOS: 4 weeks
+* Supplier lead time: 6 weeks
+* No confirmed incoming supply
+
+Although the SKU currently has 4 WOS and is within the healthy inventory range
+defined in POL-101, the 600 units are expected to be consumed in approximately
+four weeks.
+
+A new standard order placed today would not become available for approximately
+six weeks.
+
+The SKU therefore has an estimated two-week stockout exposure before new
+standard replenishment could become available.
+
+Current WOS must therefore not be interpreted independently of supplier lead
+time and projected inventory consumption.
+
+
+## 5. Projected Stockout
+
+A projected stockout occurs when available and confirmed incoming inventory is
+expected to be exhausted before sufficient replacement supply becomes available.
+
+For a basic assessment with constant weekly demand:
+
+**Estimated Weeks to Stockout = Available Inventory / Approved Weekly Demand**
+
+Where confirmed incoming supply exists, its quantity and arrival timing must
+also be considered.
+
+For more detailed planning, inventory should be projected by week using the
+approved weekly forecast rather than assuming constant demand.
+
+A projected stockout is a forward-looking risk indicator and does not mean that
+the product is already out of stock.
+
+
+## 6. Stockout and Below-Target Risk Before New Standard Supply
+
+A SKU is considered exposed to stockout risk when projected inventory is
+expected to reach zero before the earliest feasible arrival of sufficient
+replacement supply.
+
+A SKU may also have replenishment risk without reaching zero inventory.
+Projected inventory at the replenishment arrival date should therefore also be
+assessed against the inventory targets defined in POL-101.
+
+For replenishment planning, POL-101 defines:
+
+* Healthy inventory range: 4–6 WOS
+* Standard planning target: 5 WOS
+* Critical inventory: below 2 WOS
+* Potential overstock: above 8 WOS
+
+For example:
+
+* Available inventory: 300 units
+* Approved weekly forecast: 100 units
+* Current WOS: 3 weeks
+* Supplier lead time: 2 weeks
+* No confirmed incoming supply
+
+After two weeks of forecast demand, approximately 100 units would remain when
+newly ordered supply could first become available.
+
+The projected pre-arrival inventory position is therefore approximately 1 WOS.
+
+Although the SKU does not stock out before the earliest feasible arrival, its
+projected position is materially below the 5-WOS planning target.
+
+The SKU therefore requires replenishment action even though an expedite may not
+necessarily be required.
+
+Stockout risk and below-target inventory risk must be evaluated separately.
+
+
+## 7. Stockout Risk with Confirmed Incoming Supply
+
+Confirmed incoming supply must be evaluated according to both its quantity and
+expected arrival date.
+
+For example:
+
+* Available inventory: 200 units
+* Approved weekly forecast: 100 units
+* Current coverage: 2 weeks
+* Confirmed incoming supply: 600 units
+* Expected arrival: 5 weeks
+
+Current inventory is expected to be exhausted in approximately two weeks, while
+the confirmed supply is expected in five weeks.
+
+This creates an estimated three-week stockout exposure despite the existence of
+a confirmed purchase order.
+
+The existence of an open purchase order alone must therefore not be interpreted
+as evidence that the supply position is protected.
+
+The treatment of confirmed incoming supply is defined in POL-104.
+
+
+## 8. Expedite Definition
+
+An expedite is an action intended to bring confirmed or required supply into
+NovaTech earlier than the standard or currently expected arrival date.
+
+An expedite may involve:
+
+* requesting an earlier supplier ship date;
+* prioritizing production or order processing;
+* using a faster approved transportation method; or
+* accelerating an existing purchase order where the supplier supports the
+  change.
+
+Expedited supply may result in additional cost and should therefore be used only
+when justified by a material supply risk.
+
+
+## 9. When Expedite Should Be Considered
+
+An expedite should be considered when a projected stockout is expected to occur
+before the next confirmed or feasible standard supply arrival and the resulting
+inventory gap represents a material business risk.
+
+Factors supporting an expedite may include:
+
+* projected inventory reaching zero before confirmed supply arrives;
+* confirmed incoming supply being delayed beyond the expected stockout date;
+* sustained demand above forecast materially accelerating inventory consumption;
+* an approved forecast increase creating an earlier stockout; or
+* standard replenishment lead time being insufficient to prevent the projected
+  stockout.
+
+Critical inventory status under POL-101 should increase the priority of the
+review but does not automatically require an expedite.
+
+A below-target projected WOS position alone does not automatically justify an
+expedite if standard replenishment can arrive without creating a material
+stockout exposure.
+
+
+## 10. When Expedite Is Not Required
+
+An expedite should not normally be recommended when confirmed incoming supply is
+expected to arrive before available inventory is exhausted and the arrival
+timing does not create a material business risk.
+
+For example:
+
+* Available inventory: 300 units
+* Approved weekly forecast: 100 units
+* Current coverage: 3 weeks
+* Confirmed incoming supply: 500 units
+* Expected arrival: 2 weeks
+
+During the two weeks before the confirmed supply arrives, approximately 200
+units of forecast demand are expected to be consumed.
+
+Immediately before receipt, approximately 100 units of existing inventory are
+therefore expected to remain.
+
+Following receipt of the 500 incoming units, projected inventory would be
+approximately 600 units.
+
+At the stated weekly demand rate:
+
+**Projected WOS after receipt = 600 / 100 = 6 WOS**
+
+The incoming supply therefore prevents the projected stockout and restores the
+SKU to the healthy inventory range defined in POL-101.
+
+Based on these conditions alone, an expedite would not be required.
+
+However, arrival before stockout does not by itself prove that the future supply
+position is adequate. The projected inventory position after receipt must also
+be evaluated against the applicable inventory target.
+
+
+## 11. Expedite Quantity
+
+Where an expedite is justified, the expedited quantity should be sufficient to
+address the expected supply gap without unnecessarily creating excess inventory.
+
+The entire outstanding purchase-order quantity does not automatically need to be
+expedited.
+
+For example, where 1,000 units are scheduled to arrive but only 200 units are
+required to bridge the projected inventory gap, planners should evaluate whether
+a partial expedite is operationally possible.
+
+Expedite quantities should address the identified timing gap while considering
+the projected inventory position after receipt.
+
+Any quantity adjustment must comply with applicable supplier constraints defined
+in POL-105.
+
+
+## 12. Delayed Purchase Orders
+
+A delay to confirmed incoming supply must trigger reassessment when the revised
+arrival date materially changes the projected inventory position.
+
+For example:
+
+**Original position**
+
+* Estimated stockout: Week 5
+* Confirmed PO arrival: Week 4
+
+No inventory gap is expected.
+
+**After supplier delay**
+
+* Estimated stockout: Week 5
+* Revised PO arrival: Week 7
+
+The revised position creates an estimated two-week inventory gap.
+
+An expedite or alternative replenishment action should therefore be considered.
+
+The revised projected inventory position after receipt should also be reassessed
+against the inventory targets defined in POL-101.
+
+
+## 13. Demand Changes and Stockout Risk
+
+Stockout timing and projected inventory must be reassessed when expected demand
+changes materially.
+
+Higher-than-forecast demand may cause inventory to be exhausted earlier than
+previously expected and may reduce projected WOS at future supply-arrival dates.
+
+Lower-than-forecast demand may extend available coverage and reduce or eliminate
+a previously identified stockout risk.
+
+Where weekly demand varies, the approved weekly forecast should be used to
+project inventory across the relevant planning horizon rather than relying only
+on a simple average.
+
+Demand and forecast changes should be interpreted according to POL-102.
+
+
+## 14. Expedite Recommendation
+
+An expedite recommendation should identify:
+
+* the affected SKU;
+* the current inventory position;
+* the projected stockout timing;
+* the next expected or feasible supply arrival;
+* the projected inventory position immediately before that arrival;
+* the estimated inventory gap;
+* the quantity potentially required to cover the gap; and
+* the reason standard replenishment is insufficient.
+
+Where appropriate, the projected inventory position following receipt should
+also be compared with the planning target defined in POL-101.
+
+Where the available information is insufficient to determine stockout timing,
+incoming-supply timing, or projected inventory, an expedite should not be
+recommended without further review.
+
+
+## 15. Planning Principle
+
+Current WOS, projected WOS, and stockout risk represent different planning
+measures and must not be treated as interchangeable.
+
+Current WOS describes the inventory position today.
+
+Projected inventory and projected WOS describe the expected inventory position
+at a future planning point after forecast demand and confirmed incoming supply
+have been considered.
+
+Stockout risk identifies whether inventory is expected to reach zero before
+sufficient replacement supply becomes available.
+
+Supplier lead time determines how far forward the planner must evaluate the
+inventory position when considering new replenishment.
+
+A product may therefore:
+
+* have low current WOS but avoid stockout because confirmed supply arrives before
+  inventory is exhausted;
+* avoid stockout but remain materially below the planning target after supply
+  arrives; or
+* have healthy current WOS but face a future stockout because supplier lead time
+  exceeds the remaining inventory coverage.
+
+For this reason, lead time must be evaluated against projected inventory at the
+earliest feasible replenishment arrival, not against current WOS alone.
+
+Replenishment requirements should be evaluated against the standard planning
+target defined in POL-101, while expedite decisions should additionally consider
+whether the timing of standard or confirmed supply creates a material inventory
+gap.
+
+
+## 16. Policy Summary
+
+Supplier lead time represents the expected time required for new replenishment
+to become available to NovaTech and may differ by SKU and supplier.
+
+Lead time must be evaluated using projected inventory rather than current WOS
+alone.
+
+Planning assessments should consider current inventory, approved forecast demand
+during the lead-time period, confirmed incoming supply, and its arrival timing.
+
+A projected stockout occurs when inventory is expected to be exhausted before
+sufficient replacement supply becomes available.
+
+A SKU may require replenishment action even when no stockout is projected if its
+future inventory position remains below the planning target defined in POL-101.
+
+An expedite should be considered when standard or confirmed supply cannot arrive
+in time to prevent a material inventory gap.
+
+Critical or below-target WOS does not automatically require an expedite.
+
+The core planning assessment therefore considers both:
+
+1. whether sufficient supply will arrive before inventory is exhausted; and
+2. what the projected inventory position will be when that supply becomes
+   available.
+
+These conditions must be evaluated using the approved planning data and
+inventory targets applicable to the SKU.

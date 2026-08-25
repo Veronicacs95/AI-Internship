@@ -1,0 +1,194 @@
+
+# NovaTech Retail — Purchase Orders & Incoming Supply Policy
+
+Author: Supply Planning Operations
+Document ID: POL-104
+Effective date: 2026-01-01
+Last review: 2026-06-01
+Next review: 2027-01-01
+Classification: Internal
+Owner: Supply Planning
+Approver: Director of Operations
+Related: POL-101, POL-103, POL-105, POL-106
+
+## 1. Purpose
+
+This policy defines how NovaTech Retail uses open purchase orders, confirmed incoming supply, and expected arrival dates when assessing future inventory availability.
+
+The objective is to ensure that replenishment decisions consider supply already scheduled to arrive and are not based solely on current on-hand inventory.
+
+## 2. Scope
+
+This policy applies to all active products managed through NovaTech Retail's standard replenishment process.
+
+For the current planning model, inventory and incoming supply are evaluated as a single combined inventory position for each SKU across NovaTech's online and physical retail channels.
+
+## 3. Open Purchase Orders
+
+An open purchase order (PO) represents an order placed with a supplier that has not yet been fully received by NovaTech.
+
+An open PO should include, at minimum:
+
+* PO number;
+* SKU;
+* ordered quantity;
+* outstanding quantity;
+* supplier;
+* order date;
+* expected arrival date; and
+* current PO status.
+
+Only the outstanding quantity that has not already been received should be treated as potential future supply.
+
+## 4. Confirmed Incoming Supply
+
+Open purchase orders should not automatically be treated as confirmed incoming supply.
+
+For standard planning purposes, incoming supply is considered **confirmed** when:
+
+* the purchase order has been accepted or acknowledged by the supplier;
+* an outstanding quantity remains;
+* a valid expected arrival date is available; and
+* the order has not been cancelled or placed on hold.
+
+Confirmed incoming supply may be included when evaluating the projected inventory position.
+
+Unconfirmed, cancelled, or on-hold quantities must not be treated as confirmed future inventory.
+
+## 5. Expected Arrival Date
+
+The expected arrival date determines when incoming supply is expected to become available to NovaTech.
+
+Incoming supply should only be considered available from its expected arrival date onward.
+
+For example, if a product has 300 units currently available and 600 units confirmed to arrive in three weeks, the 600 incoming units must not be treated as part of today's available inventory.
+
+The timing of the arrival must be compared with expected demand during the period before the supply arrives.
+
+## 6. Current and Projected Inventory
+
+Current inventory and projected inventory represent different planning views.
+
+**Current Available Inventory** represents inventory available now.
+
+For basic forward-looking planning:
+
+**Projected Supply = Current Available Inventory + Confirmed Incoming Supply**
+
+However, projected supply must also be evaluated against the demand expected before and after each supply arrival.
+
+A simple addition of all future purchase orders to current inventory may produce a misleading result if the arrival dates are not considered.
+
+## 7. Demand Before Supply Arrival
+
+Planners must consider whether existing inventory is sufficient to support expected demand until confirmed incoming supply arrives.
+
+For example:
+
+* Current available inventory: 300 units
+* Approved weekly forecast: 100 units
+* Current WOS: 3 weeks
+* Confirmed incoming supply: 600 units
+* Expected arrival: 2 weeks
+
+Although current inventory is below NovaTech's 4–6 WOS target range, existing inventory is expected to cover demand until the confirmed supply arrives.
+
+In this situation, current WOS alone would not justify an additional purchase order.
+
+## 8. Supply Arriving After Expected Stockout
+
+A confirmed purchase order does not eliminate supply risk when it is expected to arrive after available inventory is exhausted.
+
+For example:
+
+* Current available inventory: 200 units
+* Approved weekly forecast: 100 units
+* Current WOS: 2 weeks
+* Confirmed incoming supply: 600 units
+* Expected arrival: 5 weeks
+
+Current inventory is expected to be exhausted approximately three weeks before the incoming supply arrives.
+
+This represents a potential stockout exposure and should be reviewed according to POL-106.
+
+## 9. Multiple Open Purchase Orders
+
+When multiple open purchase orders exist for the same SKU, each order should be evaluated according to its outstanding quantity and expected arrival date.
+
+For example:
+
+* PO-1001: 300 units arriving in 2 weeks
+* PO-1002: 500 units arriving in 5 weeks
+* PO-1003: 500 units arriving in 8 weeks
+
+The planner should not simply treat all 1,300 units as immediately available future inventory.
+
+Expected demand between each arrival should be considered when assessing the projected stock position.
+
+## 10. Delayed Incoming Supply
+
+When the expected arrival date of an open purchase order moves later, the projected inventory position must be reassessed.
+
+A delay may create stockout risk even when the total incoming quantity remains unchanged.
+
+Where a delayed arrival creates an expected period without sufficient inventory, the planner should review the appropriate replenishment or expedite action in accordance with POL-103 and POL-106.
+
+## 11. Cancelled and On-Hold Purchase Orders
+
+Cancelled purchase orders must be excluded from projected supply.
+
+Purchase orders placed on hold must not be treated as confirmed incoming supply until the hold is removed and a valid expected arrival date is confirmed.
+
+If a previously confirmed PO becomes cancelled or placed on hold, the affected SKU should be reassessed because the removal of expected supply may materially change its projected inventory position.
+
+## 12. Partially Received Purchase Orders
+
+When only part of a purchase order has been received, the received quantity becomes part of current inventory once it is available for sale.
+
+Only the remaining outstanding quantity should continue to be treated as incoming supply.
+
+For example:
+
+* Original PO quantity: 1,000 units
+* Quantity received: 600 units
+* Outstanding quantity: 400 units
+
+The remaining incoming supply associated with the PO is **400 units**, not 1,000 units.
+
+## 13. Purchase Orders and Replenishment Decisions
+
+Before recommending additional replenishment, planners must review existing confirmed incoming supply.
+
+A product with low current WOS may not require additional replenishment when sufficient supply is already scheduled to arrive before a stockout occurs.
+
+Conversely, a product may require action even when a large quantity is already on order if that supply is expected to arrive too late.
+
+Replenishment decisions should therefore consider both:
+
+**Quantity — how much supply is coming?**
+
+and
+
+**Timing — when will the supply arrive?**
+
+Replenishment recommendation categories are defined in POL-103.
+
+## 14. Planning Principle
+
+Incoming supply must be treated as **time-dependent future inventory**, not as inventory available today.
+
+The existence of an open purchase order alone is not sufficient evidence that inventory risk has been resolved.
+
+NovaTech's projected inventory assessment must consider the outstanding quantity, PO status, expected arrival date, and demand expected before the supply becomes available.
+
+## 15. Policy Summary
+
+Open purchase orders represent potential future supply, while only valid and acknowledged orders with an expected arrival date should be treated as confirmed incoming supply.
+
+Confirmed supply must be evaluated according to **both quantity and arrival timing**.
+
+Incoming quantities must not be added to current inventory without considering the demand expected before their arrival.
+
+Cancelled and on-hold purchase orders must be excluded from confirmed incoming supply, and only the outstanding quantity of a partially received PO should remain as future supply.
+
+A low current WOS does not automatically justify additional replenishment when sufficient confirmed supply is expected to arrive before stockout.

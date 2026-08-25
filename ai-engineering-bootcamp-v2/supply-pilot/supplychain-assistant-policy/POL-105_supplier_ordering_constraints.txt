@@ -1,0 +1,187 @@
+
+# NovaTech Retail — Supplier Ordering Constraints Policy
+
+Author: Procurement & Supply Planning
+Document ID: POL-105
+Effective date: 2026-01-01
+Last review: 2026-06-01
+Next review: 2027-01-01
+Classification: Internal
+Owner: Procurement
+Approver: Director of Operations
+Related: POL-103, POL-104, POL-106
+
+## 1. Purpose
+
+This policy defines how NovaTech Retail applies supplier ordering constraints when creating or modifying purchase orders.
+
+The objective is to ensure that replenishment recommendations are operationally valid and comply with supplier-specific requirements such as Minimum Order Quantity (MOQ), order multiples, and purchase-order restrictions.
+
+## 2. Scope
+
+This policy applies to all products purchased from external suppliers through NovaTech Retail's standard replenishment process.
+
+Supplier constraints may differ by SKU and supplier. Planners must therefore use the current approved ordering parameters associated with the relevant SKU and supplier.
+
+## 3. Minimum Order Quantity
+
+Minimum Order Quantity (MOQ) is the smallest quantity that a supplier will accept for an order of a particular SKU.
+
+A replenishment requirement below the applicable MOQ must not be submitted as a standard purchase order unless an approved exception has been agreed with the supplier.
+
+For example, if:
+
+* calculated replenishment requirement: 320 units;
+* MOQ: 500 units;
+
+the standard order cannot be placed for 320 units.
+
+The planner should evaluate whether ordering the 500-unit MOQ would create an acceptable projected inventory position before placing the order.
+
+## 4. Order Multiples
+
+Some suppliers require quantities above the MOQ to be ordered in defined increments known as order multiples.
+
+For example:
+
+* MOQ: 500 units
+* Order multiple: 100 units
+
+Valid standard order quantities include:
+
+* 500 units;
+* 600 units;
+* 700 units;
+* 800 units.
+
+Quantities such as 550 or 725 units would not satisfy the standard ordering constraint.
+
+Where a calculated replenishment requirement does not match a valid order multiple, the proposed quantity should normally be rounded up to the next valid quantity, provided doing so does not create unacceptable overstock.
+
+## 5. SKU-Specific Ordering Constraints
+
+MOQ and order multiples are product and supplier attributes and must not be assumed to be identical across NovaTech's product catalogue.
+
+For example, NovaTech may have the following approved ordering parameters:
+
+* laptops: relatively low MOQ due to high unit value;
+* accessories: higher MOQ due to lower unit value and case-pack requirements;
+* monitors: medium MOQ depending on supplier shipping configuration.
+
+The actual approved MOQ and order multiple for each SKU must be retrieved from NovaTech's current product and supplier data.
+
+This policy defines how those constraints should be interpreted; it does not define the specific MOQ for every product.
+
+## 6. Supplier-Specific Restrictions
+
+Suppliers may apply additional ordering restrictions beyond MOQ and order multiples.
+
+These may include:
+
+* fixed ordering days;
+* minimum total purchase-order value;
+* case-pack quantities;
+* maximum quantities per order;
+* limited order modification windows; or
+* restrictions associated with product availability.
+
+Where a supplier-specific restriction exists in NovaTech's approved supplier data, it must be considered before an order recommendation is finalized.
+
+## 7. New Purchase Orders
+
+Before a new purchase order is created, the planner should determine the replenishment requirement based on the expected future inventory position.
+
+The proposed quantity must then be validated against:
+
+* the SKU's MOQ;
+* applicable order multiple;
+* supplier lead time;
+* existing open purchase orders; and
+* expected inventory coverage after the proposed order.
+
+A valid supplier quantity does not automatically mean that the quantity should be ordered.
+
+The resulting inventory position must remain reasonable according to NovaTech's inventory and replenishment policies.
+
+## 8. Existing Purchase-Order Modifications
+
+Supplier constraints may also apply when an existing purchase order is increased, reduced, delayed, or cancelled.
+
+Before recommending a modification, planners should verify whether the supplier permits the requested change.
+
+A supplier may reject a modification when:
+
+* the order has entered production;
+* the order has already shipped;
+* the modification falls outside the permitted change window; or
+* the revised quantity violates MOQ or order-multiple requirements.
+
+Purchase-order status and expected arrival rules are defined in POL-104.
+
+## 9. Increasing an Existing Purchase Order
+
+When additional supply is required, increasing an existing open PO may be considered before creating a separate new order.
+
+Any increase must comply with the applicable supplier ordering constraints.
+
+For example, if an existing PO contains 500 units and the planner identifies an additional requirement of 150 units, but the supplier requires changes in multiples of 100 units, a standard increase of 150 units would not be valid.
+
+The planner should evaluate a valid quantity such as 200 units and assess its impact on projected inventory.
+
+## 10. Reducing an Existing Purchase Order
+
+A reduction should only be recommended when the supplier permits the change and the resulting quantity remains valid under the applicable ordering constraints.
+
+For example, reducing a 700-unit order to 450 units would not be valid where the MOQ is 500 units.
+
+If the supplier does not permit a reduction, the planner should not assume that excess future supply can be removed from the projected inventory position.
+
+## 11. Ordering Constraint Exceptions
+
+Exceptions to supplier ordering constraints may occur when specifically agreed with the supplier or approved by NovaTech Procurement.
+
+An exception must not be assumed simply because the standard MOQ or order multiple creates an inconvenient planning result.
+
+Where no approved exception exists, the standard supplier constraint must be applied.
+
+## 12. Relationship to Replenishment Recommendations
+
+A replenishment requirement and an executable purchase-order quantity are not always the same.
+
+For example:
+
+**Calculated requirement = 420 units**
+
+may become:
+
+**Executable order quantity = 500 units**
+
+because of supplier MOQ and order-multiple constraints.
+
+SupplyPilot recommendations should distinguish between the underlying replenishment requirement and the final valid order quantity whenever supplier constraints affect the result.
+
+The final quantity should also be checked to ensure that it does not create excessive projected inventory.
+
+## 13. Planning Principle
+
+Supplier ordering constraints define what NovaTech **can order**, while inventory and replenishment policies determine what NovaTech **should order**.
+
+These concepts must not be treated as interchangeable.
+
+A supplier may permit an order of 1,000 units, but that does not mean NovaTech requires 1,000 units.
+
+Similarly, NovaTech may calculate a requirement of 320 units, but supplier constraints may make a 320-unit purchase order impossible.
+
+The final recommendation must satisfy both the planning requirement and the applicable supplier constraints.
+
+## 14. Policy Summary
+
+NovaTech must comply with supplier-specific ordering constraints when creating or modifying purchase orders.
+
+The **Minimum Order Quantity (MOQ)** defines the minimum acceptable order quantity, while **order multiples** define the valid quantity increments above the minimum.
+
+MOQ and order multiples may differ by SKU and supplier and must be obtained from current approved product and supplier data.
+
+A calculated replenishment requirement must therefore be validated against supplier constraints before it becomes an executable purchase-order recommendation.
+
+Supplier constraints determine what can be ordered; they do not independently determine what should be ordered.
