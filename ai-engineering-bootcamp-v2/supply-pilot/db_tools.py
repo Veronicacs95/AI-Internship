@@ -18,6 +18,19 @@ if not DATABASE_URL:
 
 
 def get_inventory(sku: str):
+    """
+    Get the current available inventory for one SKU.
+
+    Use this tool when the user asks how many units are currently in stock
+    or when current inventory is required for a supply-planning analysis.
+
+    Args:
+        sku: The exact NovaTech product SKU.
+
+    Returns:
+        The SKU, available inventory quantity, and inventory snapshot date.
+        Returns None if the SKU has no inventory record.
+    """
     with psycopg.connect(DATABASE_URL) as conn:
         with conn.cursor() as cursor:
             cursor.execute(
@@ -41,6 +54,19 @@ def get_inventory(sku: str):
 
 
 def get_product_data(sku: str):
+    """
+    Get master data and ordering constraints for one product.
+
+    Use this tool when product identity, category, supplier, unit cost,
+    minimum order quantity (MOQ), order multiple, or active status is needed.
+
+    Args:
+        sku: The exact NovaTech product SKU.
+
+    Returns:
+        Product name, category, supplier ID, unit cost, MOQ, order multiple,
+        and active status. Returns None if the SKU is not found.
+    """
     with psycopg.connect(DATABASE_URL) as conn:
         with conn.cursor() as cursor:
             cursor.execute(
@@ -69,6 +95,20 @@ def get_product_data(sku: str):
 
 
 def get_supplier_data(supplier_id: str):
+    """
+    Get supplier information and standard lead time for one supplier.
+
+    Use this tool when supplier identity, country, active status, or lead time
+    is required. If only a SKU is known, first use get_product_data to obtain
+    its supplier_id.
+
+    Args:
+        supplier_id: The exact NovaTech supplier ID.
+
+    Returns:
+        Supplier ID, supplier name, lead time in weeks, country,
+        and active status. Returns None if the supplier is not found.
+    """
     with psycopg.connect(DATABASE_URL) as conn:
         with conn.cursor() as cursor:
             cursor.execute(
@@ -94,6 +134,19 @@ def get_supplier_data(supplier_id: str):
 
 
 def get_forecast(sku: str):
+    """
+    Get the weekly demand forecast for one SKU.
+
+    Use this tool when future expected demand is required for supply planning,
+    replenishment analysis, projected inventory, or forward-looking WOS calculations.
+
+    Args:
+        sku: The exact NovaTech product SKU.
+
+    Returns:
+        A chronological list of weeks and forecast quantities.
+        Returns an empty list if no forecast records are found.
+    """
     with psycopg.connect(DATABASE_URL) as conn:
         with conn.cursor() as cursor:
             cursor.execute(
@@ -116,6 +169,20 @@ def get_forecast(sku: str):
 
 
 def get_sales_history(sku: str):
+    """
+    Get historical weekly sales for one SKU.
+
+    Use this tool when actual historical demand or sales trends are needed.
+    Do not use it as a substitute for forecast data when the analysis
+    specifically requires future expected demand.
+
+    Args:
+        sku: The exact NovaTech product SKU.
+
+    Returns:
+        A chronological list of weeks and actual sales quantities.
+        Returns an empty list if no sales records are found.
+    """
     with psycopg.connect(DATABASE_URL) as conn:
         with conn.cursor() as cursor:
             cursor.execute(
@@ -138,6 +205,25 @@ def get_sales_history(sku: str):
 
 
 def get_open_pos(sku: str):
+    """
+    Get all outstanding purchase orders representing incoming supply for one SKU.
+
+    Use this tool when the user asks about open POs, incoming supply,
+    outstanding quantities, or expected arrival dates.
+
+    This tool already returns PO number, supplier ID, ordered quantity,
+    outstanding quantity, order date, expected arrival date, and status.
+
+    Do not call product or supplier tools afterward unless the user explicitly
+    needs additional product details, supplier details, or supplier lead time.
+
+    Args:
+        sku: The exact NovaTech product SKU.
+
+    Returns:
+        A chronological list of open or partially open purchase orders with
+        outstanding quantity greater than zero.
+    """
     with psycopg.connect(DATABASE_URL) as conn:
         with conn.cursor() as cursor:
             cursor.execute(

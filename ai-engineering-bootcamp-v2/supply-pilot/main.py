@@ -17,7 +17,12 @@ from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 import psycopg
 
 from db_tools import (get_inventory, get_product_data, get_supplier_data, get_forecast, get_sales_history, get_open_pos)
+from planning_tools import (calculate_projected_inventory, calculate_forward_average_demand, calculate_projected_wos, calculate_target_inventory, calculate_gap_to_target, detect_stockout_exposure, adjust_order_quantity, check_replenishment_arrival_risk)
+from rag_tools import (PINECONE_INDEX_NAME,pinecone_index,extract_metadata,chunk_text,build_embedding_texts,embed_chunks,build_vectors,upsert_vectors,retrieve_chunks,build_rag_context,build_grounding_prompt,)
 
+from rag_tools import search_docs
+
+from google.adk.agents import Agent
 
 ## --------------------------------------------------
 # 1. LOAD ENVIRONMENT
@@ -25,16 +30,6 @@ from db_tools import (get_inventory, get_product_data, get_supplier_data, get_fo
 
 _ENV_PATH = Path(__file__).resolve().parent / ".env"
 load_dotenv(_ENV_PATH)
-
-PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME","week2-rag",)
-
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL","text-embedding-3-small",)
-
-EMBEDDING_DIMENSIONS = int(os.getenv("EMBEDDING_DIMENSIONS", "512"))
-
-CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "800"))
-
-CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "100"))
 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -51,30 +46,6 @@ app = FastAPI()
 # Existing OpenAI client used by /ask
 client = OpenAI()
 
-# Pinecone connection
-pinecone = Pinecone()
-pinecone_index = pinecone.Index(PINECONE_INDEX_NAME)
-
-
-# --------------------------------------------------
-# 3. EMBEDIN MODEL
-# --------------------------------------------------
-
-# Embedding client
-embeddings = OpenAIEmbeddings(
-    model=EMBEDDING_MODEL,
-    dimensions=EMBEDDING_DIMENSIONS,
-)
-
-# --------------------------------------------------
-# 4. TEXT SPLITTER
-# --------------------------------------------------
-
-splitter = RecursiveCharacterTextSplitter(
-    chunk_size=CHUNK_SIZE,
-    chunk_overlap=CHUNK_OVERLAP,
-    separators=["\n\n", "\n", ". ", " ", ""],
-)
 
 # --------------------------------------------------
 # 5. EXISTING WEEK 1 MODEL CONFIG
@@ -216,214 +187,6 @@ def call_model_unsafe(question: str, model: str) -> tuple[Answer, int, int, int]
     prompt_tokens = usage.prompt_tokens if usage else 0
     completion_tokens = usage.completion_tokens if usage else 0
     return answer, total, prompt_tokens, completion_tokens
-
-# --------------------------------------------------
-# 7.2. NEW HELPERS WEEK 2
-# --------------------------------------------------
-
-def extract_metadata(text: str, source: str) -> dict:
-
-    lines = text.splitlines()
-
-    # First non-empty line = title
-    title = next(
-        (line.strip() for line in lines if line.strip()),
-        "Unknown"
-    )
-
-    fields = {
-        "Author": "author",
-        "Document ID": "document_id",
-        "Effective date": "effective_date",
-        "Last review": "last_review",
-        "Next review": "next_review",
-        "Classification": "classification",
-        "Owner": "owner",
-        "Approver": "approver",
-        "Related": "related",
-    }
-
-    metadata = {
-        "title": title,
-        "source": source,
-    }
-
-    for label, key in fields.items():
-
-        match = re.search(
-            rf"^{re.escape(label)}:\s*(.+)$",
-            text,
-            re.MULTILINE,
-        )
-
-        metadata[key] = (
-            match.group(1).strip()
-            if match
-            else "Unknown"
-        )
-
-    return metadata
-
-def chunk_text(text: str) -> list[str]:
-
-    chunks = splitter.split_text(text)
-
-    if not chunks:
-        raise ValueError("No chunks could be created.")
-
-    return chunks
-
-def build_embedding_texts(
-    chunks: list[str],
-    metadata: dict,
-) -> list[str]:
-
-    embedding_texts = []
-
-    for chunk in chunks:
-
-        embedding_text = (
-            f"Title: {metadata['title']}\n"
-            f"Document ID: {metadata['document_id']}\n"
-            f"{chunk}"
-        )
-
-        embedding_texts.append(embedding_text)
-
-    return embedding_texts
-
-def embed_chunks(
-    embedding_texts: list[str],
-) -> list[list[float]]:
-
-    return embeddings.embed_documents(
-        embedding_texts
-    )
-
-def build_vectors(
-    chunks: list[str],
-    embedding_texts: list[str],
-    text_embeddings: list[list[float]],
-    metadata: dict,) -> list[dict]:
-
-    vectors = []
-
-    document_id = metadata["document_id"]
-
-    for i, (chunk, embedding_text, embedding) in enumerate(
-        zip(chunks, embedding_texts, text_embeddings)
-    ):
-
-        vector = {
-            "id": f"{document_id}-{i}",
-
-            "values": embedding,
-
-            "metadata": {
-                **metadata,
-                "chunk_index": i,
-                "chunk_text": chunk,
-                "embedding_text": embedding_text,
-            },
-        }
-
-        vectors.append(vector)
-
-    return vectors
-
-def upsert_vectors(vectors: list[dict]) -> None:
-
-    pinecone_index.upsert(
-        vectors=vectors
-    )
-
-
-
-# RAG function
-
-def retrieve_chunks(question: str,top_k: int = 5,) -> list[dict]:
-
-    # 1. Embed the user's question
-    query_embedding = embeddings.embed_query(question) # Dimension 512 and model defined before
-
-    # 2. Search Pinecone
-    results = pinecone_index.query(
-        vector=query_embedding,
-        top_k=top_k,
-        include_metadata=True,
-    )
-
-    chunks = []
-
-    # 3. Extract each result + all stored metadata
-    for match in results.matches:
-
-        metadata = match.metadata or {}
-
-        chunks.append(
-            {
-                "id": match.id,
-                "score": match.score,
-                "chunk_index": metadata.get("chunk_index", -1),
-
-                # Original document chunk
-                "chunk_text": metadata.get("chunk_text","",),
-
-                # EXACT string that generated the stored vector
-                "embedding_text": metadata.get("embedding_text","",),
-                "title": metadata.get("title", "Unknown"),
-                "author": metadata.get("author", "Unknown"),
-                "document_id": metadata.get("document_id", "Unknown"),
-                "effective_date": metadata.get("effective_date", "Unknown"),
-                "last_review": metadata.get("last_review", "Unknown"),
-                "next_review": metadata.get("next_review", "Unknown"),
-                "classification": metadata.get("classification", "Unknown"),
-                "owner": metadata.get("owner", "Unknown"),
-                "approver": metadata.get("approver", "Unknown"),
-                "related": metadata.get("related", "Unknown"),
-
-                "source": metadata.get("source", "Unknown"),
-            }
-        )
-
-    return chunks
-
-
-
-
-
-def build_rag_context(retrieved_chunks: list[dict]) -> str:
-
-    context_parts = []
-
-    for chunk in retrieved_chunks:
-
-        context_parts.append(
-            f"Chunk ID: {chunk['id']}\n"
-            f"Document ID: {chunk['document_id']}\n"
-            f"{chunk['chunk_text']}"
-        )
-
-    return "\n\n---\n\n".join(context_parts)
-
-def build_grounding_prompt(
-    question: str,
-    context: str,) -> str:
-
-    return f"""
-    Answer using ONLY the context below.
-
-    If the context does not contain the answer, say:
-    "I don't have enough information to answer that."
-
-    Cite the document_id of each chunk you used.
-
-    Context:
-    {context}
-
-    Question:
-    {question}
-    """
 
 # --------------------------------------------------
 # 8.1 EXISTING POST /ask
