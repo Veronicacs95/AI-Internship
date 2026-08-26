@@ -4,79 +4,87 @@
 from datetime import datetime, timedelta
 
 
-from datetime import datetime, timedelta
-
 
 def calculate_projected_inventory(
     current_inventory: int,
     forecast_rows: list[dict],
     po_rows: list[dict],
-    current_week_start: str, ) -> list[dict]:
+    current_week_start: str,
+    unmet_demand_carryover_rate: float = 0.0,) -> list[dict]:
     """
-    Project available inventory week by week using forecast demand
-    and incoming purchase orders.
+    Project physical inventory week by week using forecast demand,
+    incoming purchase orders, and an explicit unmet-demand carryover assumption.
 
-    Use this tool when you need to know how much inventory is expected
+    Use this tool when you need to know how much physical inventory is expected
     to remain in CW, CW+1, CW+2, or any future planning week.
 
     Rules:
+    - Physical projected inventory cannot be negative.
     - Start from current available inventory.
     - Use current_week_start as the reference for CW.
     - Derive CW, CW+1, CW+2... from each forecast week_start.
-    - Subtract the actual forecast quantity for each week.
-    - Add only purchase-order quantities expected to arrive
-      during that planning week.
-    - Only outstanding PO quantity is treated as incoming supply.
-    - Only OPEN or PARTIAL POs are included.
-    - Received, cancelled, on-hold, or zero-outstanding POs are excluded.
-    - A PO is counted only in the week in which it is expected to arrive.
-    - Return the projected inventory for every forecast week.
+    - Add only outstanding OPEN or PARTIAL purchase orders arriving that week.
+    - Base demand is the forecast quantity for the week.
+    - If previous demand could not be fulfilled, carry forward the configured
+      proportion of that unmet demand.
+    - unmet_demand_carryover_rate = 0 means unmet demand is not carried forward.
+    - unmet_demand_carryover_rate = 1 means all unmet demand becomes backlog.
+    - Values between 0 and 1 represent partial carryover.
+    - Unfulfilled demand is reported separately from physical inventory.
 
     Args:
         current_inventory:
-            Inventory available at the start of CW.
+            Physical inventory available at the start of CW.
 
         forecast_rows:
             Weekly forecast records ordered by week_start.
-            Expected format:
-            [{
-                "week_start": "2026-08-24",
-                "forecast_qty": 120
-            }, ...]
 
         po_rows:
-            Open purchase-order records.
-            Expected format:
-            [{
-                "expected_arrival_date": "2026-09-14",
-                "outstanding_qty": 500,
-                "status": "OPEN"
-            }, ...]
+            Purchase-order records containing expected arrival date,
+            outstanding quantity, and status.
 
         current_week_start:
-            Monday date representing CW.
-            Expected format: "YYYY-MM-DD".
-            Example: "2026-08-24".
+            Monday representing CW in YYYY-MM-DD format.
+
+        unmet_demand_carryover_rate:
+            Proportion of the previous week's unmet demand that should
+            carry into the next week. Must be between 0 and 1.
 
     Returns:
         A list containing, for each planning week:
-        - planning_week: CW, CW+1, CW+2...
+        - planning_week
         - week_start
         - forecast_qty
+        - carried_unmet_demand
+        - effective_demand
         - incoming_supply
         - projected_inventory
+        - unmet_demand
     """
 
-    current_week = datetime.strptime(current_week_start, "%Y-%m-%d").date()
+    if not 0 <= unmet_demand_carryover_rate <= 1:
+        raise ValueError(
+            "unmet_demand_carryover_rate must be between 0 and 1."
+        )
+
+    current_week = datetime.strptime(
+        current_week_start, "%Y-%m-%d"
+    ).date()
+
     projected_inventory = current_inventory
+    previous_unmet_demand = 0
     projection = []
 
     for forecast in forecast_rows:
-        week_start = datetime.strptime(forecast["week_start"], "%Y-%m-%d").date()
+        week_start = datetime.strptime(
+            forecast["week_start"], "%Y-%m-%d" ).date()
+
         week_end = week_start + timedelta(days=6)
 
         weeks_ahead = (week_start - current_week).days // 7
-        planning_week = "CW" if weeks_ahead == 0 else f"CW+{weeks_ahead}"
+
+        planning_week = (
+            "CW" if weeks_ahead == 0 else f"CW+{weeks_ahead}")
 
         incoming_supply = sum(
             po["outstanding_qty"]
@@ -84,19 +92,35 @@ def calculate_projected_inventory(
             if po["status"] in {"OPEN", "PARTIAL"}
             and po["outstanding_qty"] > 0
             and week_start
-            <= datetime.strptime(po["expected_arrival_date"], "%Y-%m-%d").date()
-            <= week_end
+            <= datetime.strptime(
+                po["expected_arrival_date"], "%Y-%m-%d"
+            ).date()
+            <= week_end)
+
+        carried_unmet_demand = (previous_unmet_demand * unmet_demand_carryover_rate)
+
+        effective_demand = (forecast["forecast_qty"] + carried_unmet_demand)
+
+        available_inventory = (projected_inventory + incoming_supply)
+
+        unmet_demand = max(0,effective_demand - available_inventory,)
+
+        projected_inventory = max(0,available_inventory - effective_demand,)
+
+        projection.append(
+            {
+                "planning_week": planning_week,
+                "week_start": str(week_start),
+                "forecast_qty": forecast["forecast_qty"],
+                "carried_unmet_demand": carried_unmet_demand,
+                "effective_demand": effective_demand,
+                "incoming_supply": incoming_supply,
+                "projected_inventory": projected_inventory,
+                "unmet_demand": unmet_demand,
+            }
         )
 
-        projected_inventory += incoming_supply - forecast["forecast_qty"]
-
-        projection.append({
-            "planning_week": planning_week,
-            "week_start": str(week_start),
-            "forecast_qty": forecast["forecast_qty"],
-            "incoming_supply": incoming_supply,
-            "projected_inventory": projected_inventory,
-        })
+        previous_unmet_demand = unmet_demand
 
     return projection
 
@@ -110,8 +134,13 @@ def calculate_forward_average_demand(
     """
     Calculate the forward average weekly demand from a selected planning week.
 
-    Use this tool when you need a stable demand rate for WOS,
+    Use this tool when a forward demand rate is needed for WOS,
     target inventory, or gap-to-target calculations.
+
+    This calculation requires forecast data only.
+    Do not retrieve current inventory, purchase orders, product data,
+    supplier data, or policy unless the user's broader question separately
+    requires them.
 
     Rules:
     - Use current_week_start as the reference for CW.
@@ -194,25 +223,30 @@ def calculate_projected_wos(
     """
     Calculate projected Weeks of Supply (WOS) for a selected planning week.
 
-    Use this tool when you need to measure how many weeks of forward
-    demand the projected inventory at CW, CW+1, CW+2... can cover.
+    Use this tool to measure how many weeks of forward forecast demand
+    the physical projected inventory at CW, CW+1, CW+2... can cover.
 
     Rules:
-    - Use projected inventory for the selected planning week.
+    - Use physical projected inventory for the selected planning week.
+    - Projected inventory should be non-negative.
     - Use the rolling 5-week forward average demand starting from
       the same planning week.
     - Do not use the actual forecast of a single week for WOS.
+    - Do not subtract unmet demand again here. Any unmet-demand carryover
+      should already have been reflected upstream in the projected inventory
+      calculation.
+    - A projected inventory of 0 produces 0 WOS.
     - Do not classify the result as healthy, critical, or overstock here.
-      Those thresholds come from planning policy.
+      Those thresholds come from NovaTech planning policy.
     - Return the calculated WOS for the selected planning week.
 
     Args:
         projected_inventory:
-            Projected available inventory at the selected planning week.
+            Physical projected inventory at the selected planning week.
 
         forward_average_demand:
             Average weekly demand calculated from the next 5 forecast
-            weeks starting from the selected planning week.
+            weeks starting from the same planning week.
 
         planning_week:
             Planning point being evaluated.
@@ -226,6 +260,9 @@ def calculate_projected_wos(
         - projected_wos
     """
 
+    if projected_inventory < 0:
+        raise ValueError("Projected inventory cannot be negative.")
+
     if forward_average_demand <= 0:
         raise ValueError("Forward average demand must be greater than 0.")
 
@@ -238,33 +275,36 @@ def calculate_projected_wos(
         "projected_wos": round(projected_wos, 2),
     }
 
-
 def calculate_target_inventory(
     forward_average_demand: float,
     target_wos: float,
-    planning_week: str,) -> dict:
+    planning_week: str,
+) -> dict:
     """
     Calculate the target inventory quantity for a selected planning week.
 
-    Use this tool when you need to know how many inventory units are
-    required to meet NovaTech's planning target at CW, CW+1, CW+2...
+    Use this tool to convert a WOS planning target into the inventory
+    quantity required at CW, CW+1, CW+2...
 
     Rules:
     - Use the forward average weekly demand for the selected planning week.
-    - Multiply that demand rate by the policy planning target in WOS.
-    - The standard NovaTech planning target is currently 5 WOS,
-      but this value should be passed into the tool rather than hard-coded.
+    - Multiply that demand rate by the target WOS provided to the tool.
+    - The target WOS must come from retrieved NovaTech policy or an explicit
+      user-provided scenario assumption.
+    - Do not infer or choose the target WOS inside this tool.
+    - Unmet demand and unmet-demand carryover are not inputs to this calculation.
+      Their effects are handled separately in projected inventory.
     - Do not use this tool to decide whether an order should be placed.
-      It only converts the WOS target into units.
-    - Supplier constraints, incoming POs, and lead time are evaluated separately.
+    - Supplier constraints, incoming POs, lead time, and projected inventory
+      are evaluated separately.
 
     Args:
         forward_average_demand:
             Rolling forward average weekly demand for the selected planning week.
 
         target_wos:
-            WOS planning target obtained from policy.
-            Example: 5.
+            WOS target obtained from NovaTech policy or explicitly provided
+            by the user for scenario analysis.
 
         planning_week:
             Planning point being evaluated.
@@ -297,33 +337,36 @@ def calculate_target_inventory(
 def calculate_gap_to_target(
     projected_inventory: float,
     target_inventory: float,
-    planning_week: str,) -> dict:
+    planning_week: str,
+) -> dict:
     """
-    Calculate how many inventory units are below or above target
+    Calculate how many physical inventory units are below or above target
     for a selected planning week.
 
-    Use this tool when you need to quantify the inventory gap
-    at CW, CW+1, CW+2... after projected inventory and target
-    inventory have already been calculated.
+    Use this tool after projected inventory and target inventory have
+    already been calculated for the same planning week.
 
     Rules:
-    - Compare projected inventory with target inventory
-      for the same planning week.
-    - A negative gap means inventory is below target.
-    - A positive gap means inventory is above target.
+    - Compare physical projected inventory with target inventory for
+      the same planning week.
+    - Projected inventory must be non-negative.
+    - A negative gap means projected inventory is below target.
+    - A positive gap means projected inventory is above target.
     - Zero means projected inventory is exactly at target.
-    - Return the absolute quantity as well as the signed gap.
-    - Do not decide the purchase-order quantity here.
-      MOQ, order multiples, incoming supply, and lead time
-      are handled separately.
+    - Return both the signed gap and its absolute magnitude.
+    - Do not add unmet demand to the inventory gap. Unmet demand is a
+      separate planning signal produced by the projected inventory calculation.
+    - Do not calculate an order quantity here.
+    - MOQ, order multiples, incoming supply, lead time, and other
+      replenishment constraints are handled separately.
 
     Args:
         projected_inventory:
-            Expected available inventory at the selected planning week.
+            Physical projected inventory at the selected planning week.
 
         target_inventory:
-            Inventory units required to meet the policy WOS target
-            at the same planning week.
+            Inventory required to meet the selected WOS target at the
+            same planning week.
 
         planning_week:
             Planning point being evaluated.
@@ -338,6 +381,12 @@ def calculate_gap_to_target(
         - difference_units
         - status
     """
+
+    if projected_inventory < 0:
+        raise ValueError("Projected inventory cannot be negative.")
+
+    if target_inventory < 0:
+        raise ValueError("Target inventory cannot be negative.")
 
     gap = projected_inventory - target_inventory
 

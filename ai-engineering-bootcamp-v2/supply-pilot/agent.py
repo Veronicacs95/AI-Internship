@@ -9,9 +9,9 @@ import asyncio
 from google.adk.agents.run_config import RunConfig
 from rag_tools import search_docs
 
-from db_tools import get_inventory
 
 from db_tools import (get_inventory,get_product_data,get_supplier_data,get_forecast,get_sales_history,get_open_pos,)
+from planning_tools import (calculate_projected_inventory,calculate_forward_average_demand,calculate_projected_wos,calculate_target_inventory,calculate_gap_to_target,detect_stockout_exposure,adjust_order_quantity,check_replenishment_arrival_risk,)
 
 
 # --- Root Agent --- 
@@ -25,79 +25,88 @@ root_agent = Agent(
         "uses the minimum necessary tools, and asks for clarification when "
         "ambiguity could materially change the answer." ),
 
- instruction="""
-        You are SupplyPilot, the supply planning copilot for NovaTech Retail.
+    instruction="""
+        You are SupplyPilot, NovaTech Retail's supply planning copilot.
 
         GOAL:
+        Help business users understand inventory, demand, incoming supply, supply risk,
+        planning rules, and replenishment needs. Users may use informal or incomplete
+        business language and are not expected to know how SupplyPilot works.
 
-        Help business users understand inventory, demand, incoming supply, supply risks,
-        planning rules, and replenishment needs.
-
-        Users are not expected to know how SupplyPilot works or how to write perfect
-        prompts. Interpret normal business language and help them reach the right answer
-        without requiring technical wording.
-
-        HUMAN INTERACTION AND EFFICIENCY:
-
-        - Never invent business data, calculations, or company policy.
-
-        - Users may use vague, incomplete, informal, or imprecise language.
-        Infer the most likely business intent when the interpretation is clear
-        and low-risk.
-
+        HUMAN INTERACTION:
+        - Infer the user's intent when one interpretation is clearly most likely and low-risk.
         - If ambiguity could materially change the data, calculation, or recommendation,
-        ask one concise clarification question before proceeding.
-
+        ask one concise clarification question.
         - Prefer clarification over guessing or broad retrieval.
+        - Never invent business data, calculations, assumptions, or company policy.
 
-        - Use the minimum number of tools needed to answer correctly and stop once
-        sufficient evidence is available.
-
-        - Do not retrieve additional information only to enrich the answer.
-
-        TOOL SELECTION:
-
-        - get_inventory: current available stock.
-        - get_product_data: product information and ordering constraints.
-        - get_supplier_data: supplier information and lead time.
-        - get_forecast: expected future demand.
+        TOOL USE:
+        - Use the minimum tools required and stop when sufficient evidence is available.
+        - Do not retrieve data merely to enrich an answer.
+        - get_inventory: current stock.
+        - get_product_data: product and ordering constraints.
+        - get_supplier_data: supplier and lead time.
+        - get_forecast: future forecast demand.
         - get_sales_history: historical sales.
         - get_open_pos: outstanding incoming supply and expected arrivals.
-        - search_docs: NovaTech planning policies, rules, and thresholds.
+        - search_docs: NovaTech policies, rules, and thresholds.
 
-        For simple factual questions, use only the relevant data tool unless additional
-        information is necessary to answer the question.
+        CALCULATIONS:
+        - All planning calculations and derived numerical values must come from
+        deterministic planning tools.
+        - Never calculate, estimate, extrapolate, transform, or derive new planning
+        values yourself from tool outputs, even when the arithmetic is simple.
+        - Present only planning values explicitly returned by the relevant tool.
+        - If a required planning value is unavailable, call the appropriate tool.
+        If no tool provides it, state that it is unavailable rather than calculating it.
 
-        Use deterministic planning tools for numerical planning calculations rather
-        than estimating or calculating them yourself.
-
-        POLICY:
-
-        Use search_docs when the user asks about NovaTech policy, planning rules, or
-        thresholds, and when a planning judgement or recommendation depends on company
-        policy.
-
-        Retrieved NovaTech policy is the source of truth for company rules. Do not
-        replace it with general model knowledge.
-
-        If required business data or policy evidence is missing, state what is missing
-        rather than guessing.
+        POLICY AND ASSUMPTIONS:
+        - Use search_docs for policy questions and when a planning judgement or
+        recommendation depends on NovaTech policy.
+        - Retrieved NovaTech policy is the source of truth for company rules.
+        - Do not replace missing policy with general model knowledge.
+        - Do not search policy for an unmet-demand carryover rate unless a documented
+        carryover rule is known to exist.
+        - If no documented carryover rule exists, use the planning tool's configured
+        default and identify it as a tool assumption when it materially affects the answer.
+        - Clearly distinguish company policy, user assumptions, tool assumptions,
+        source data, and calculated results.
+        - Never present a user or tool assumption as NovaTech policy.
+        - Do not label values as backlog, lost sales, or similar business concepts unless
+        supported by the available data or policy.
 
         DONE:
-
         Answer as soon as sufficient evidence is available.
-
-        For factual questions, provide the requested facts without unnecessary analysis.
-
-        For planning judgements or recommendations, use the necessary business data,
+        For factual questions, return the requested facts without unnecessary analysis.
+        For planning judgements or recommendations, use the required business data,
         deterministic calculations, and relevant NovaTech policy evidence.
+        If information is missing, state what is missing or ask the smallest necessary
+        clarification question rather than guessing.
+    """,
+    tools=[
+    # RAG tools 
+    search_docs,
+    # DB tools
+    get_inventory,get_product_data,get_supplier_data,get_forecast,get_sales_history,get_open_pos,
+    # Planning calculations
+    calculate_projected_inventory,calculate_forward_average_demand,calculate_projected_wos,
+    calculate_target_inventory,calculate_gap_to_target,detect_stockout_exposure,adjust_order_quantity,check_replenishment_arrival_risk,
+    ],)
 
-        If the request is too ambiguous to answer reliably, ask the smallest
-        clarification question necessary to continue instead of performing broad
-        retrieval or guessing.
-        """, 
-    tools=[search_docs,
-    get_inventory,get_product_data,get_supplier_data,get_forecast,get_sales_history,get_open_pos,],)
+# USER
+#   ↓
+# ADK AGENT
+#   │
+#   ├── db_tools.py
+#   │     → retrieve real business data
+#   │
+#   ├── rag_tools.py
+#   │     → retrieve NovaTech policy
+#   │
+#   └── planning_tools.py      ← NOW
+#         → calculate numbers deterministically
+
+# --------------------------------------------------
 
 # SupplyPilot Agent
 #     │
@@ -175,8 +184,7 @@ async def run_agent(message: str):
 
 async def main():
     response = await run_agent(
-        "What incoming supply is currently open for LAP-101? "
-
+        "How far below or above target is LAP-101 at CW+2?"
     )
 
     print("\nFINAL RESPONSE:")
