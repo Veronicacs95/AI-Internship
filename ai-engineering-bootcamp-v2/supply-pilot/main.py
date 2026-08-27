@@ -23,6 +23,7 @@ from rag_tools import (PINECONE_INDEX_NAME,pinecone_index,extract_metadata,chunk
 from rag_tools import search_docs
 
 from google.adk.agents import Agent
+from agent import run_agent
 
 ## --------------------------------------------------
 # 1. LOAD ENVIRONMENT
@@ -122,6 +123,26 @@ class RetrievedChunk(BaseModel):
 
     source: str
 
+
+# NEW — Week 3 Agent API
+
+class AgentRequest(BaseModel):
+    """User message sent to the SupplyPilot ADK agent."""
+    message: str
+
+
+class AgentStep(BaseModel):
+    """Short observable tool execution step."""
+    tool: str
+    observation: str
+
+
+class AgentResponse(BaseModel):
+    """Final agent answer plus observable execution metadata."""
+    answer: str
+    steps: list[AgentStep]
+    llm_calls: int
+
 # --------------------------------------------------
 # 7. EXISTING WEEK 1 HELPERS
 # --------------------------------------------------
@@ -188,99 +209,84 @@ def call_model_unsafe(question: str, model: str) -> tuple[Answer, int, int, int]
     completion_tokens = usage.completion_tokens if usage else 0
     return answer, total, prompt_tokens, completion_tokens
 
-# --------------------------------------------------
-# 8.1 EXISTING POST /ask
-# --------------------------------------------------
 
-@app.post("/ask")
-def ask(body: AskRequest) -> AskResponse:
-    """Answer one question with structured output, guardrails, and cost visibility."""
-
-    model = body.model or DEFAULT_MODEL
-    last_error: str | None = None
-
-
-    retrieved_chunks = retrieve_chunks(question=body.question,top_k=5,)
-    context = build_rag_context(retrieved_chunks)
-
-    grounding_prompt = build_grounding_prompt(question=body.question,context=context,)
-
-    retrieved_chunk_ids = [
-        chunk["id"]
-        for chunk in retrieved_chunks ]
-
-
-    # Stage 3: one retry keeps the logic legible while still protecting callers.
-    for attempt in range(2):
-        try:
-            start = time.perf_counter()
-
-            # First attempt with force_bad uses the unsafe path; retry uses structured output.
-            use_bad_path = body.force_bad and attempt == 0
-            if use_bad_path:
-                answer, tokens_used, prompt_tokens, completion_tokens = call_model_unsafe(
-                    grounding_prompt, model
-                )
-            else:
-                answer, tokens_used, prompt_tokens, completion_tokens = call_model_structured(
-                    grounding_prompt, model
-                )
-
-            latency_ms = int((time.perf_counter() - start) * 1000)
-            cost_usd = compute_cost_usd(model, prompt_tokens, completion_tokens)
-
-            return AskResponse(
-                answer=answer,
-                tokens_used=tokens_used,
-                model=model,
-                latency_ms=latency_ms,
-                cost_usd=round(cost_usd, 6),
-                # NEW WEEK 2
-                retrieved_chunk_ids=(retrieved_chunk_ids),
-            )
-
-        except (ValidationError, ValueError) as exc:
-            last_error = str(exc)
-            continue
-
-    # Clean failure — never leak a half-parsed response to the client.
-    raise HTTPException(
-        status_code=502,
-        detail=f"Model response failed schema validation after retry: {last_error}",
-    )
-
+# FastAPI main.py
+# │
+# ├── GET /health
+# │     → check that the FastAPI / Render service is running
+# │
+# ├── POST /agent
+# │     → main SupplyPilot entrypoint
+# │        ↓
+# │     ADK Agent
+# │        ├── DB tools
+# │        ├── planning tools
+# │        └── search_docs → Pinecone
+# │
+# ├── POST /ingest
+# │     → load/update policy documents in Pinecone
+# │
+# ├── GET /health/pinecone
+# │     → check the Pinecone connection
+# │
+# ├── GET /health/db
+# │     → check the PostgreSQL connection
+# │
+# └── GET /debug/retrieve
+#       → test RAG retrieval independently
 
 # --------------------------------------------------
-# 8.2 GET /health/pinecone/db
+# GET /health — FastAPI / Render service health
 # --------------------------------------------------
 
-@app.get("/health/pinecone")
-def pinecone_health():
-    stats = pinecone_index.describe_index_stats()
-
+@app.get("/health")
+def health():
+    """
+    Check that the FastAPI application is running.
+    Does not depend on PostgreSQL or Pinecone.
+    """
     return {
         "status": "ok",
-        "index": PINECONE_INDEX_NAME,
-        "dimension": stats.dimension,
-        "total_vector_count": stats.total_vector_count,
+        "service": "SupplyPilot API",
     }
 
+# --------------------------------------------------
+# 8.1.2 POST /agent — Week 3 ADK Agent
+# --------------------------------------------------
 
-@app.get("/health/db")
-def db_health():
+@app.post("/agent", response_model=AgentResponse)
+async def agent_endpoint(body: AgentRequest) -> AgentResponse:
+    """
+    Run the SupplyPilot Google ADK agent for a user message.
+
+    Returns:
+    - final agent answer
+    - short observable tool steps
+    - total Gemini calls
+    """
+
+    if not body.message.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Message cannot be empty.",
+        )
+
     try:
-        with psycopg.connect(DATABASE_URL) as conn:
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT 1;")
-                result = cursor.fetchone()
+        result = await run_agent(body.message)
 
-        return {
-            "status": "ok",
-            "database": "postgres",
-            "test_query": result[0],}
+        return AgentResponse(
+            answer=result["answer"],
+            steps=result["steps"],
+            llm_calls=result["llm_calls"],
+        )
 
     except Exception as exc:
-        raise HTTPException(status_code=500,detail=f"Database connection failed: {str(exc)}",)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Agent execution failed: {str(exc)}",
+        )
+
+
 
 
 # --------------------------------------------------
@@ -362,6 +368,38 @@ def ingest(body: IngestRequest):
             status_code=500,
             detail=f"Ingestion failed: {str(exc)}",
         )
+
+# --------------------------------------------------
+# 8.2 GET /health/pinecone/db
+# --------------------------------------------------
+
+@app.get("/health/pinecone")
+def pinecone_health():
+    stats = pinecone_index.describe_index_stats()
+
+    return {
+        "status": "ok",
+        "index": PINECONE_INDEX_NAME,
+        "dimension": stats.dimension,
+        "total_vector_count": stats.total_vector_count,
+    }
+
+
+@app.get("/health/db")
+def db_health():
+    try:
+        with psycopg.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT 1;")
+                result = cursor.fetchone()
+
+        return {
+            "status": "ok",
+            "database": "postgres",
+            "test_query": result[0],}
+
+    except Exception as exc:
+        raise HTTPException(status_code=500,detail=f"Database connection failed: {str(exc)}",)
 
 
 # --------------------------------------------------

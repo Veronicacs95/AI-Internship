@@ -2,7 +2,7 @@
 
 
 from datetime import datetime, timedelta
-
+import math
 
 
 def calculate_projected_inventory(
@@ -410,48 +410,36 @@ def detect_stockout_exposure(
     projection_rows: list[dict],
 ) -> dict:
     """
-    Detect whether projected inventory reaches zero or becomes negative
-    in any future planning week.
+    Detect projected stockout exposure using unmet demand.
 
-    Use this tool when you need to identify stockout risk, the first
-    stockout week, and how severe the projected inventory gap becomes.
+    Use this tool when you need to identify whether forecast demand cannot
+    be fully fulfilled, the first affected planning week, and the severity
+    of projected unmet demand.
 
     Rules:
-    - Use the week-by-week projected inventory output.
-    - Check each planning week in chronological order.
-    - A projected inventory of 0 or below is treated as stockout exposure.
-    - Return the first week where stockout occurs.
-    - Keep the actual projected inventory values so forecast peaks
-      and PO timing remain visible.
+    - Use the output from calculate_projected_inventory().
+    - Physical projected inventory cannot be negative.
+    - A week has stockout exposure when unmet_demand > 0.
+    - Check planning weeks in chronological order.
+    - Return the first week with unmet demand.
+    - Use unmet demand to measure shortage severity.
     - Do not use rolling average demand for this calculation.
     - Do not decide whether to expedite here.
-      Expedite decisions must also consider policy, lead time,
-      PO timing, and business impact.
-
-    Args:
-        projection_rows:
-            Output from calculate_projected_inventory().
-            Expected format:
-            [{
-                "planning_week": "CW+2",
-                "week_start": "2026-09-07",
-                "forecast_qty": 300,
-                "incoming_supply": 0,
-                "projected_inventory": -50
-            }, ...]
+      Expedite decisions also require policy, lead time, PO timing,
+      and business context.
 
     Returns:
         A dictionary containing:
         - stockout_exposure
         - first_stockout_week
         - first_stockout_date
-        - first_stockout_inventory
-        - lowest_projected_inventory
+        - first_stockout_unmet_demand
+        - maximum_unmet_demand
     """
 
     stockout_rows = [
         row for row in projection_rows
-        if row["projected_inventory"] <= 0
+        if row["unmet_demand"] > 0
     ]
 
     if not stockout_rows:
@@ -459,10 +447,8 @@ def detect_stockout_exposure(
             "stockout_exposure": False,
             "first_stockout_week": None,
             "first_stockout_date": None,
-            "first_stockout_inventory": None,
-            "lowest_projected_inventory": min(
-                row["projected_inventory"] for row in projection_rows
-            ),
+            "first_stockout_unmet_demand": 0,
+            "maximum_unmet_demand": 0,
         }
 
     first = stockout_rows[0]
@@ -471,13 +457,11 @@ def detect_stockout_exposure(
         "stockout_exposure": True,
         "first_stockout_week": first["planning_week"],
         "first_stockout_date": first["week_start"],
-        "first_stockout_inventory": first["projected_inventory"],
-        "lowest_projected_inventory": min(
-            row["projected_inventory"] for row in projection_rows
+        "first_stockout_unmet_demand": first["unmet_demand"],
+        "maximum_unmet_demand": max(
+            row["unmet_demand"] for row in projection_rows
         ),
     }
-
-import math
 
 
 def adjust_order_quantity(
@@ -562,43 +546,57 @@ def adjust_order_quantity(
 def check_replenishment_arrival_risk(
     projection_rows: list[dict],
     lead_time_weeks: int,
-    current_week: str = "CW",) -> dict:
+    current_week: str = "CW",
+) -> dict:
     """
     Check whether a new standard replenishment order would arrive
-    before projected inventory reaches zero.
+    before projected unmet demand begins.
 
     Use this tool when you need to assess whether normal replenishment
-    can arrive in time or whether stockout exposure exists before arrival.
+    can arrive in time or whether unmet-demand exposure occurs before arrival.
 
     Rules:
-    - Assume a new order is placed in CW.
+    - Assume a new standard order is placed in CW.
     - Standard arrival occurs after supplier lead_time_weeks.
-    - Use projected inventory week by week.
-    - Find the first planning week where projected inventory <= 0.
-    - If stockout occurs before the expected standard arrival,
+    - Use the output from calculate_projected_inventory().
+    - Physical projected inventory is non-negative.
+    - Stockout exposure occurs when unmet_demand > 0.
+    - Find the first planning week where unmet demand occurs.
+    - If unmet demand occurs before the expected standard arrival,
       there is replenishment arrival risk.
-    - If no stockout occurs before arrival, standard replenishment
-      can arrive before projected stockout.
+    - If no unmet demand occurs before arrival, standard replenishment
+      can arrive without a projected timing gap.
+    - Use unmet demand as the shortage signal; do not infer shortage
+      severity from negative inventory.
     - Do not decide whether to expedite here.
       This tool only measures timing risk.
-    - Expedite recommendations must also consider policy and business impact.
+    - Expedite recommendations must also consider NovaTech policy,
+      business impact, confirmed incoming supply, and other planning evidence.
 
     Args:
         projection_rows:
             Output from calculate_projected_inventory().
+
             Expected format:
+
             [{
                 "planning_week": "CW+2",
-                "projected_inventory": -50
+                "week_start": "2026-09-07",
+                "projected_inventory": 0,
+                "unmet_demand": 12
             }, ...]
 
         lead_time_weeks:
             Standard supplier lead time in weeks.
-            Example: 5.
+
+            Example:
+                6
 
         current_week:
             Reference planning week.
-            Default = "CW".
+
+            Default:
+                "CW"
 
     Returns:
         A dictionary containing:
@@ -606,6 +604,7 @@ def check_replenishment_arrival_risk(
         - expected_arrival_week
         - stockout_exposure
         - first_stockout_week
+        - first_stockout_unmet_demand
         - arrival_risk
         - stockout_gap_weeks
     """
@@ -614,11 +613,16 @@ def check_replenishment_arrival_risk(
         raise ValueError("Lead time cannot be negative.")
 
     expected_arrival_week = (
-        "CW" if lead_time_weeks == 0 else f"CW+{lead_time_weeks}")
+        "CW"
+        if lead_time_weeks == 0
+        else f"CW+{lead_time_weeks}"
+    )
 
     stockout_rows = [
-        row for row in projection_rows
-        if row["projected_inventory"] <= 0 ]
+        row
+        for row in projection_rows
+        if row["unmet_demand"] > 0
+    ]
 
     if not stockout_rows:
         return {
@@ -626,16 +630,23 @@ def check_replenishment_arrival_risk(
             "expected_arrival_week": expected_arrival_week,
             "stockout_exposure": False,
             "first_stockout_week": None,
+            "first_stockout_unmet_demand": 0,
             "arrival_risk": False,
             "stockout_gap_weeks": 0,
         }
 
-    first_stockout = stockout_rows[0]["planning_week"]
+    first_stockout_row = stockout_rows[0]
+
+    first_stockout_week = first_stockout_row["planning_week"]
+    first_stockout_unmet_demand = first_stockout_row["unmet_demand"]
 
     stockout_week_number = (
-        0 if first_stockout == "CW"
-        else int(first_stockout.split("+")[1])
+        0
+        if first_stockout_week == "CW"
+        else int(first_stockout_week.split("+")[1])
     )
+
+    arrival_risk = stockout_week_number < lead_time_weeks
 
     gap = lead_time_weeks - stockout_week_number
 
@@ -643,7 +654,45 @@ def check_replenishment_arrival_risk(
         "lead_time_weeks": lead_time_weeks,
         "expected_arrival_week": expected_arrival_week,
         "stockout_exposure": True,
-        "first_stockout_week": first_stockout,
-        "arrival_risk": stockout_week_number < lead_time_weeks,
+        "first_stockout_week": first_stockout_week,
+        "first_stockout_unmet_demand": first_stockout_unmet_demand,
+        "arrival_risk": arrival_risk,
         "stockout_gap_weeks": max(gap, 0),
+    }
+
+
+def calculate_replenishment_requirement(
+    gap_units: float,
+    planning_week: str,
+) -> dict:
+    """
+    Convert an inventory gap-to-target into an initial replenishment requirement.
+
+    Use this tool after calculate_gap_to_target when you need the positive
+    quantity required to close a below-target inventory gap.
+
+    Rules:
+    - A negative gap means inventory is below target.
+    - Convert a negative gap into a positive replenishment requirement.
+    - If gap_units is zero or positive, no replenishment requirement is created.
+    - This is an initial planning requirement only.
+    - Do not apply MOQ or order multiples here.
+    - Do not decide whether an order should be placed here.
+    - Incoming supply, timing risk, lead time, policy, and supplier constraints
+      must be evaluated separately.
+
+    Returns:
+        - planning_week
+        - gap_units
+        - required_qty
+        - replenishment_required
+    """
+
+    required_qty = max(0, -gap_units)
+
+    return {
+        "planning_week": planning_week,
+        "gap_units": round(gap_units, 2),
+        "required_qty": round(required_qty, 2),
+        "replenishment_required": required_qty > 0,
     }
