@@ -239,7 +239,7 @@ def call_model_unsafe(question: str, model: str) -> tuple[Answer, int, int, int]
 # GET /health — FastAPI / Render service health
 # --------------------------------------------------
 
-@app.get("/health")
+@app.get("/health") # health check endpoint
 def health():
     """
     Check that the FastAPI application is running.
