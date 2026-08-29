@@ -159,121 +159,112 @@ DONE:
 # - streaming UI → receives live llm_call / act / observe / final events
 # --------------------------------------------------
 
-
 async def run_agent(message: str, event_callback=None):
+    # Create the ADK session and runner
     session_service = InMemorySessionService()
     runner = Runner(agent=root_agent, app_name="supplypilot", session_service=session_service)
     session = await session_service.create_session(app_name="supplypilot", user_id="test_user")
 
+    # Convert the user message into ADK content
     content = types.Content(role="user", parts=[types.Part(text=message)])
     run_config = RunConfig(max_llm_calls=8)
 
-    final_response = "(no response)"
+    # Initialize trace data before the agent starts
+    final_response = None
     llm_calls = 0
     tool_calls = []
     retrieved_context = []
-
-    async for event in runner.run_async(
-        user_id="test_user",
-        session_id=session.id,
-        new_message=content,
-        run_config=run_config
-    ):
-        # LLM CALL
-        if getattr(event, "usage_metadata", None):
-            llm_calls += 1
-
-            print(f"\nGEMINI CALL #{llm_calls}")
-            print("Usage:", event.usage_metadata)
-
-            if event_callback:
-                await event_callback({
-                    "type": "llm_call",
-                    "number": llm_calls
-                })
-
-        if not event.content or not event.content.parts:
-            continue
-
-        for part in event.content.parts:
-
-            # ACT
-            if getattr(part, "function_call", None):
-                tool_name = part.function_call.name
-                arguments = part.function_call.args
-
-                print("\nACT")
-                print(f"Tool: {tool_name}")
-                print(f"Arguments: {arguments}")
-
-                tool_calls.append({
-                    "type": "act",
-                    "tool": tool_name,
-                    "arguments": arguments
-                })
-
-                if event_callback:
-                    await event_callback({
-                        "type": "act",
-                        "tool": tool_name,
-                        "arguments": arguments
-                    })
-
-            # OBSERVE
-            elif getattr(part, "function_response", None):
-                tool_name = part.function_response.name
-                result = part.function_response.response
-                result_text = str(result)
-
-                print("\nOBSERVE")
-                print(f"Tool: {tool_name}")
-                print(f"Result: {result}")
-
-                tool_calls.append({
-                    "type": "observe",
-                    "tool": tool_name,
-                    "observation": result
-                })
-
-                # RAG / policy retrieval evidence
-                if tool_name == "search_docs":
-                    retrieved_context.append({
-                        "tool": tool_name,
-                        "context": result
-                    })
-
-                if event_callback:
-                    display_result = result_text[:500] + "..." if len(result_text) > 500 else result_text
-
-                    await event_callback({
-                        "type": "observe",
-                        "tool": tool_name,
-                        "observation": display_result
-                    })
-
-            # FINAL
-            elif getattr(part, "text", None) and event.is_final_response():
-                final_response = part.text
-
-                print("\nFINAL")
-                print(final_response)
-
-                if event_callback:
-                    await event_callback({
-                        "type": "final",
-                        "answer": final_response
-                    })
 
     trace = {
         "user_input": message,
         "retrieved_context": retrieved_context,
         "tool_calls": tool_calls,
-        "assistant_output": final_response,
-        "llm_calls": llm_calls
+        "assistant_output": None,
+        "llm_calls": 0,
+        "status": "running",
+        "error_message": None
     }
 
-    print(f"\nTOTAL GEMINI CALLS: {llm_calls}")
-    print("\nTRACE")
-    print(json.dumps(trace, indent=2, ensure_ascii=False, default=str))
+    try:
+        # Run the agent and process its event stream
+        async for event in runner.run_async(user_id="test_user", session_id=session.id, new_message=content, run_config=run_config):
+
+            # Track each LLM call
+            if getattr(event, "usage_metadata", None):
+                llm_calls += 1
+                trace["llm_calls"] = llm_calls
+                print(f"\nGEMINI CALL #{llm_calls}")
+                print("Usage:", event.usage_metadata)
+
+                if event_callback:
+                    await event_callback({"type": "llm_call", "number": llm_calls})
+
+            if not event.content or not event.content.parts:
+                continue
+
+            for part in event.content.parts:
+
+                # ACT: record the tool selected by the agent
+                if getattr(part, "function_call", None):
+                    tool_name = part.function_call.name
+                    arguments = part.function_call.args
+                    print("\nACT")
+                    print(f"Tool: {tool_name}")
+                    print(f"Arguments: {arguments}")
+                    tool_calls.append({"type": "act", "tool": tool_name, "arguments": arguments})
+
+                    if event_callback:
+                        await event_callback({"type": "act", "tool": tool_name, "arguments": arguments})
+
+                # OBSERVE: record the result returned by the tool
+                elif getattr(part, "function_response", None):
+                    tool_name = part.function_response.name
+                    result = part.function_response.response
+                    result_text = str(result)
+                    print("\nOBSERVE")
+                    print(f"Tool: {tool_name}")
+                    print(f"Result: {result}")
+                    tool_calls.append({"type": "observe", "tool": tool_name, "observation": result})
+
+                    # Store RAG evidence separately for grounding evaluation
+                    if tool_name == "search_docs":
+                        retrieved_context.append({"tool": tool_name, "context": result})
+
+                    if event_callback:
+                        display_result = result_text[:500] + "..." if len(result_text) > 500 else result_text
+                        await event_callback({"type": "observe", "tool": tool_name, "observation": display_result})
+
+                # FINAL: capture the agent's final answer
+                elif getattr(part, "text", None) and event.is_final_response():
+                    final_response = part.text
+                    trace["assistant_output"] = final_response
+                    print("\nFINAL")
+                    print(final_response)
+
+                    if event_callback:
+                        await event_callback({"type": "final", "answer": final_response})
+
+        # Mark the trace as successful if the agent completes normally
+        trace["status"] = "success"
+
+    except Exception as e:
+        # Preserve failed runs, including max-LLM-call failures
+        trace["status"] = "failed"
+        trace["error_message"] = str(e)
+        trace["assistant_output"] = final_response
+        trace["llm_calls"] = llm_calls
+        print("\nAGENT FAILED")
+        print(str(e))
+
+        if event_callback:
+            await event_callback({"type": "error", "error": str(e)})
+
+    finally:
+        # Always save the trace, whether the run succeeds or fails
+        trace["llm_calls"] = llm_calls
+        print(f"\nTOTAL GEMINI CALLS: {llm_calls}")
+        print("\nTRACE")
+        print(json.dumps(trace, indent=2, ensure_ascii=False, default=str))
+        save_agent_trace(trace)
 
     return trace

@@ -199,54 +199,65 @@ async def agent_endpoint(body: AgentRequest):
     - error
     """
 
+    # Reject empty requests
     if not body.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
 
     async def event_generator():
+        # Queue used to stream agent events to the client
         queue = asyncio.Queue()
 
+        # Receive events generated inside run_agent
         async def event_callback(event: dict):
             await queue.put(event)
 
+        # Run the agent in a separate async task
         async def execute_agent():
             try:
                 result = await run_agent(body.message, event_callback=event_callback)
 
-                save_agent_trace(result)
-
+                # run_agent already saves both successful and failed traces
                 await queue.put({
                     "type": "done",
                     "llm_calls": result["llm_calls"],
+                    "status": result["status"]
                 })
 
             except Exception as exc:
+                # Handle unexpected errors outside run_agent
                 await queue.put({
                     "type": "error",
-                    "message": str(exc),
+                    "message": str(exc)
                 })
 
             finally:
+                # Always signal the end of the SSE stream
                 await queue.put(None)
 
+        # Start the agent without blocking the event stream
         task = asyncio.create_task(execute_agent())
 
+        # Stream events to the client as they arrive
         while True:
             event = await queue.get()
 
+            # None signals that execution has finished
             if event is None:
                 break
 
             yield f"data: {json.dumps(event, default=str)}\n\n"
 
+        # Ensure the agent task has fully completed
         await task
 
+    # Return the live Server-Sent Events stream
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
+            "X-Accel-Buffering": "no"
+        }
     )
 
 
