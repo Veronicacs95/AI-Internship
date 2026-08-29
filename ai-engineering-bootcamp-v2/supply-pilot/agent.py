@@ -4,8 +4,11 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 from google.adk.agents.run_config import RunConfig
 from rag_tools import search_docs
-from db_tools import get_inventory,get_product_data,get_supplier_data,get_forecast,get_sales_history,get_open_pos
+from db_tools import get_inventory,get_product_data,get_supplier_data,get_forecast,get_sales_history,get_open_pos,save_agent_trace
 from planning_tools import calculate_projected_inventory,calculate_forward_average_demand,calculate_projected_wos,calculate_target_inventory,calculate_gap_to_target,detect_stockout_exposure,adjust_order_quantity,check_replenishment_arrival_risk,calculate_replenishment_requirement
+
+import json
+from pathlib import Path
 
 # --------------------------------------------------
 # ROOT AGENT
@@ -79,7 +82,7 @@ DONE:
         # RAG
         search_docs,
         # DB
-        get_inventory,get_product_data,get_supplier_data,get_forecast,get_sales_history,get_open_pos,
+        get_inventory,get_product_data,get_supplier_data,get_forecast,get_sales_history,get_open_pos,save_agent_trace,
         # Deterministic planning
         calculate_projected_inventory,calculate_forward_average_demand,calculate_projected_wos,
         calculate_target_inventory,calculate_gap_to_target,calculate_replenishment_requirement,
@@ -90,28 +93,65 @@ DONE:
 # --------------------------------------------------
 # SUPPLYPILOT ARCHITECTURE
 # --------------------------------------------------
-# SupplyPilot Agent
-# │
-# ├── RETRIEVAL / DATA
-# │   ├── search_docs → Pinecone / NovaTech policy
-# │   ├── get_inventory → current stock
-# │   ├── get_product_data → product + MOQ + order multiple + supplier
-# │   ├── get_supplier_data → supplier + lead time
-# │   ├── get_forecast → future weekly demand
-# │   ├── get_sales_history → historical sales
-# │   └── get_open_pos → incoming supply + expected arrivals
-# │
-# └── DETERMINISTIC PLANNING
-#     ├── calculate_projected_inventory → physical inventory + unmet demand
-#     ├── calculate_forward_average_demand → rolling forward demand
-#     ├── calculate_projected_wos → projected WOS
-#     ├── calculate_target_inventory → WOS target converted to units
-#     ├── calculate_gap_to_target → inventory gap vs target
-#     ├── calculate_replenishment_requirement → gap converted to required quantity
-#     ├── adjust_order_quantity → MOQ + order multiple adjustment
-#     ├── detect_stockout_exposure → stockout timing + unmet demand
-#     └── check_replenishment_arrival_risk → stockout timing vs standard arrival
 
+# SupplyPilot Agent
+#     │
+#     ├── RETRIEVAL / DATA TOOLS
+#     │     │
+#     │     ├── RAG TOOL
+#     │     │     │
+#     │     │     └── search_docs
+#     │     │           → Pinecone / NovaTech policies
+#     │     │
+#     │     └── DATABASE TOOLS — PostgreSQL
+#     │           │
+#     │           ├── get_inventory
+#     │           │     → current stock
+#     │           │
+#     │           ├── get_product_data
+#     │           │     → product + MOQ + order multiple + supplier
+#     │           │
+#     │           ├── get_supplier_data
+#     │           │     → lead time + supplier details
+#     │           │
+#     │           ├── get_forecast
+#     │           │     → future weekly demand
+#     │           │
+#     │           ├── get_sales_history
+#     │           │     → historical sales
+#     │           │
+#     │           └── get_open_pos
+#     │                 → open incoming supply + expected arrivals
+#     │
+#     └── DETERMINISTIC PLANNING TOOLS — Python
+#           │
+#           ├── calculate_projected_inventory
+#           │     → projected inventory by week
+#           │     → unmet demand + carried unmet demand
+#           │
+#           ├── calculate_forward_average_demand
+#           │     → rolling forward average weekly demand
+#           │
+#           ├── calculate_projected_wos
+#           │     → projected Weeks of Supply (WOS)
+#           │
+#           ├── calculate_target_inventory
+#           │     → target WOS converted into inventory units
+#           │
+#           ├── calculate_gap_to_target
+#           │     → inventory above / below target
+#           │
+#           ├── calculate_replenishment_requirement
+#           │     → below-target gap converted into required quantity
+#           │
+#           ├── adjust_order_quantity
+#           │     → required quantity adjusted for MOQ + order multiple
+#           │
+#           ├── detect_stockout_exposure
+#           │     → first stockout week + unmet-demand exposure
+#           │
+#           └── check_replenishment_arrival_risk
+#                 → compares stockout timing vs standard lead-time arrival
 # --------------------------------------------------
 # RUNNER
 # event_callback is optional:
@@ -119,27 +159,38 @@ DONE:
 # - streaming UI → receives live llm_call / act / observe / final events
 # --------------------------------------------------
 
-async def run_agent(message: str,event_callback=None):
+
+async def run_agent(message: str, event_callback=None):
     session_service = InMemorySessionService()
-    runner = Runner(agent=root_agent,app_name="supplypilot",session_service=session_service)
-    session = await session_service.create_session(app_name="supplypilot",user_id="test_user")
-    content = types.Content(role="user",parts=[types.Part(text=message)])
+    runner = Runner(agent=root_agent, app_name="supplypilot", session_service=session_service)
+    session = await session_service.create_session(app_name="supplypilot", user_id="test_user")
+
+    content = types.Content(role="user", parts=[types.Part(text=message)])
     run_config = RunConfig(max_llm_calls=8)
 
     final_response = "(no response)"
     llm_calls = 0
-    steps = []
+    tool_calls = []
+    retrieved_context = []
 
-    async for event in runner.run_async(user_id="test_user",session_id=session.id,new_message=content,run_config=run_config):
-
-        # GEMINI CALL
-        if getattr(event,"usage_metadata",None):
+    async for event in runner.run_async(
+        user_id="test_user",
+        session_id=session.id,
+        new_message=content,
+        run_config=run_config
+    ):
+        # LLM CALL
+        if getattr(event, "usage_metadata", None):
             llm_calls += 1
+
             print(f"\nGEMINI CALL #{llm_calls}")
-            print("Usage:",event.usage_metadata)
+            print("Usage:", event.usage_metadata)
 
             if event_callback:
-                await event_callback({"type":"llm_call","number":llm_calls})
+                await event_callback({
+                    "type": "llm_call",
+                    "number": llm_calls
+                })
 
         if not event.content or not event.content.parts:
             continue
@@ -147,7 +198,7 @@ async def run_agent(message: str,event_callback=None):
         for part in event.content.parts:
 
             # ACT
-            if getattr(part,"function_call",None):
+            if getattr(part, "function_call", None):
                 tool_name = part.function_call.name
                 arguments = part.function_call.args
 
@@ -155,35 +206,74 @@ async def run_agent(message: str,event_callback=None):
                 print(f"Tool: {tool_name}")
                 print(f"Arguments: {arguments}")
 
+                tool_calls.append({
+                    "type": "act",
+                    "tool": tool_name,
+                    "arguments": arguments
+                })
+
                 if event_callback:
-                    await event_callback({"type":"act","tool":tool_name,"arguments":arguments})
+                    await event_callback({
+                        "type": "act",
+                        "tool": tool_name,
+                        "arguments": arguments
+                    })
 
             # OBSERVE
-            elif getattr(part,"function_response",None):
+            elif getattr(part, "function_response", None):
                 tool_name = part.function_response.name
                 result = part.function_response.response
                 result_text = str(result)
-                truncated_result = result_text[:500] + "..." if len(result_text) > 500 else result_text
 
                 print("\nOBSERVE")
                 print(f"Tool: {tool_name}")
                 print(f"Result: {result}")
 
-                steps.append({"tool":tool_name,"observation":truncated_result})
+                tool_calls.append({
+                    "type": "observe",
+                    "tool": tool_name,
+                    "observation": result
+                })
+
+                # RAG / policy retrieval evidence
+                if tool_name == "search_docs":
+                    retrieved_context.append({
+                        "tool": tool_name,
+                        "context": result
+                    })
 
                 if event_callback:
-                    await event_callback({"type":"observe","tool":tool_name,"observation":truncated_result})
+                    display_result = result_text[:500] + "..." if len(result_text) > 500 else result_text
+
+                    await event_callback({
+                        "type": "observe",
+                        "tool": tool_name,
+                        "observation": display_result
+                    })
 
             # FINAL
-            elif getattr(part,"text",None) and event.is_final_response():
+            elif getattr(part, "text", None) and event.is_final_response():
                 final_response = part.text
 
                 print("\nFINAL")
                 print(final_response)
 
                 if event_callback:
-                    await event_callback({"type":"final","answer":final_response})
+                    await event_callback({
+                        "type": "final",
+                        "answer": final_response
+                    })
+
+    trace = {
+        "user_input": message,
+        "retrieved_context": retrieved_context,
+        "tool_calls": tool_calls,
+        "assistant_output": final_response,
+        "llm_calls": llm_calls
+    }
 
     print(f"\nTOTAL GEMINI CALLS: {llm_calls}")
+    print("\nTRACE")
+    print(json.dumps(trace, indent=2, ensure_ascii=False, default=str))
 
-    return {"answer":final_response,"steps":steps,"llm_calls":llm_calls}
+    return trace

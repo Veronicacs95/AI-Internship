@@ -140,6 +140,51 @@ def health():
 # 5. POST /agent — STREAMING ADK AGENT
 # --------------------------------------------------
 
+# USER
+#  │
+#  │ "When will LAP-101 run out of stock?"
+#  ▼
+# POST /agent
+#  │
+#  ▼
+# FastAPI
+#  │
+#  ▼
+# run_agent()
+#  │
+#  ├── ACT → get_inventory()
+#  │       └── OBSERVE → 85
+#  │
+#  ├── ACT → get_forecast()
+#  │       └── OBSERVE → [...]
+#  │
+#  ├── ACT → calculate_projected_inventory()
+#  │       └── OBSERVE → [...]
+#  │
+#  └── FINAL → "LAP-101 will run out in CW+2"
+#           │
+#           ├──────────────────────────────► USER
+#           │                                sees final answer
+#           │
+#           ▼
+#    complete trace created
+#           │
+#           ▼
+#    return trace to FastAPI
+#           │
+#           ▼
+#    save_agent_trace(result)
+#           │
+#           ▼
+#    PostgreSQL
+#    agent_traces
+#           │
+#           ▼
+#         DONE
+#           │
+#           └──────────────────────────────► USER
+#                                            stream closes
+
 @app.post("/agent")
 async def agent_endpoint(body: AgentRequest):
     """
@@ -166,15 +211,20 @@ async def agent_endpoint(body: AgentRequest):
         async def execute_agent():
             try:
                 result = await run_agent(body.message, event_callback=event_callback)
+
+                save_agent_trace(result)
+
                 await queue.put({
                     "type": "done",
                     "llm_calls": result["llm_calls"],
                 })
+
             except Exception as exc:
                 await queue.put({
                     "type": "error",
                     "message": str(exc),
                 })
+
             finally:
                 await queue.put(None)
 
