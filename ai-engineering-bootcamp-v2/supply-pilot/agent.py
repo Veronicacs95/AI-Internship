@@ -5,7 +5,7 @@ from google.genai import types
 from google.adk.agents.run_config import RunConfig
 from rag_tools import search_docs
 from db_tools import get_inventory,get_product_data,get_supplier_data,get_forecast,get_sales_history,get_open_pos,save_agent_trace
-from planning_tools import calculate_projected_inventory,calculate_forward_average_demand,calculate_projected_wos,calculate_target_inventory,calculate_gap_to_target,detect_stockout_exposure,adjust_order_quantity,check_replenishment_arrival_risk,calculate_replenishment_requirement
+from planning_tools import calculate_projected_inventory,calculate_forward_average_demand,calculate_projected_wos,calculate_target_inventory,calculate_gap_to_target,detect_stockout_exposure,adjust_order_quantity,check_replenishment_arrival_risk,calculate_replenishment_requirement, select_replenishment_planning_point
 
 import json
 from pathlib import Path
@@ -46,6 +46,14 @@ TOOL USE:
 - get_open_pos: outstanding incoming supply and expected arrivals.
 - search_docs: NovaTech policies, rules, and thresholds.
 
+REPLENISHMENT PLANNING POINT:
+- When evaluating a replenishment requirement and the user does not explicitly specify a planning week, use the first projected stockout week as the replenishment planning point when stockout exposure exists.
+- If the user explicitly requests a planning week or what-if scenario, use the requested planning week instead.
+- Once a replenishment planning point is selected, use that same planning point consistently for projected inventory, forward average demand, projected WOS, target inventory, gap-to-target, and replenishment requirement.
+- Do not mix values calculated for different planning weeks.
+- Use deterministic planning tools to identify the stockout week and calculate all values for the selected planning point.
+
+
 CALCULATIONS:
 - All planning calculations and derived numerical values must come from deterministic planning tools.
 - Never calculate, estimate, extrapolate, transform, or derive new planning values yourself from tool outputs, even when the arithmetic is simple.
@@ -71,11 +79,21 @@ POLICY AND ASSUMPTIONS:
 - Never present a user assumption or tool assumption as NovaTech policy.
 - Do not label values as backlog, lost sales, or similar business concepts unless supported by available data or policy.
 
+ACTIONABLE RECOMMENDATIONS:
+- When the user asks what replenishment action should be taken, the final answer must provide one clear primary replenishment action: INCREASE, MAINTAIN, REDUCE, or DELAY.
+- When INCREASE is recommended and a replenishment quantity has been calculated, state the final valid order quantity after applying MOQ and order-multiple constraints.
+- Do not present multiple competing order quantities without selecting the one associated with the chosen replenishment planning point.
+- When projected stockout exposure exists, explicitly state the first stockout week and the relevant shortage or unmet-demand result returned by the deterministic tools.
+- When standard or confirmed supply cannot arrive before the projected stockout, explicitly state the timing risk and, when supported by retrieved NovaTech policy, recommend the appropriate review such as expedite or earlier-supply action.
+- Separate the primary replenishment action from any timing action. For example: primary action = INCREASE; timing action = review expedite or earlier supply.
+- Recommendations must be supported by the deterministic planning results and, when company rules determine the action, relevant retrieved NovaTech policy.
+
 DONE:
 - Answer as soon as sufficient evidence is available.
 - For factual questions, return the requested facts without unnecessary analysis.
 - For deterministic planning questions, return the calculated result and relevant supporting facts.
 - For planning judgements or recommendations, use the required business data, deterministic calculations, and relevant NovaTech policy evidence.
+- For replenishment recommendations, finish with one clear primary action and, when applicable, one clear timing action.
 - If information is missing, state what is missing or ask the smallest necessary clarification question rather than guessing.
 """,
     tools=[
@@ -86,7 +104,7 @@ DONE:
         # Deterministic planning
         calculate_projected_inventory,calculate_forward_average_demand,calculate_projected_wos,
         calculate_target_inventory,calculate_gap_to_target,calculate_replenishment_requirement,
-        adjust_order_quantity,detect_stockout_exposure,check_replenishment_arrival_risk,
+        adjust_order_quantity,detect_stockout_exposure,check_replenishment_arrival_risk,select_replenishment_planning_point
     ],
 )
 

@@ -44,7 +44,7 @@ Weeks of Supply thresholds must be interpreted according to POL-101.
 
 Demand and forecast signals must be interpreted according to POL-102.
 
-## 4. Projected Inventory Position
+## 4. Projected Inventory Position and Planning Point
 
 Before changing replenishment, planners should assess whether current inventory and confirmed incoming supply are expected to support demand over the relevant planning horizon.
 
@@ -57,6 +57,20 @@ Expected demand during the relevant period must then be considered against the p
 A low current inventory position does not necessarily indicate a need for additional replenishment if sufficient confirmed supply is already expected to arrive before inventory is exhausted.
 
 Similarly, a healthy current inventory position may still require additional replenishment if future demand is expected to consume inventory before replacement supply can arrive.
+
+### 4.1 Replenishment Planning Point
+
+When a replenishment requirement is being calculated and projected stockout exposure exists, the default replenishment planning point is the **first projected stockout week**.
+
+The projected inventory position, forward demand rate, WOS, target inventory, gap-to-target, and replenishment requirement must all be evaluated using the same selected planning point.
+
+Values from different planning weeks must not be combined when determining a replenishment requirement.
+
+If a planner explicitly requests a different planning week, scenario, or what-if analysis, the requested planning point should be used instead of the default first-stockout planning point.
+
+For example, if the first projected stockout occurs at CW+1, CW+1 should normally be used as the replenishment planning point. If the planner explicitly asks for the expected position at CW+3, the calculation should instead use CW+3 and the corresponding forward demand and projected inventory values.
+
+If no projected stockout exists, the relevant planning point should be selected according to the planning question being evaluated and the available future inventory position.
 
 ## 5. Increase Replenishment
 
@@ -118,14 +132,18 @@ The standard decision sequence is:
 1. Determine the current inventory position.
 2. Review the approved demand forecast and relevant recent sales.
 3. Identify confirmed incoming supply and expected arrival dates.
-4. Assess projected inventory coverage.
+4. Project inventory across the relevant planning horizon.
 5. Identify potential stockout or overstock risk.
-6. Determine whether replenishment should be increased, maintained, reduced, or delayed.
-7. Validate the proposed action against supplier ordering constraints and lead time.
+6. If stockout exposure exists and no alternative planning point was explicitly requested, select the first projected stockout week as the replenishment planning point.
+7. Calculate the replenishment requirement consistently at the selected planning point.
+8. Determine whether replenishment should be increased, maintained, reduced, or delayed.
+9. Validate the proposed quantity against supplier ordering constraints.
+10. Assess whether confirmed or standard replenishment can arrive in time.
+11. Where timing risk exists, evaluate the appropriate action under POL-106.
 
 ## 10. Replenishment Recommendations
 
-A replenishment recommendation should clearly state the proposed action and the main evidence supporting it.
+A replenishment recommendation must clearly state the proposed primary action and the main evidence supporting it.
 
 The standard recommendation categories are:
 
@@ -134,7 +152,24 @@ The standard recommendation categories are:
 * **Reduce** — less future supply is expected to be required.
 * **Delay** — the quantity may still be required, but at a later date.
 
-Recommendations should explain the relevant inventory, demand, and incoming-supply conditions rather than relying only on the final category.
+When an Increase recommendation is supported by the planning assessment, the recommendation should state the valid replenishment quantity after applicable MOQ and order-multiple constraints have been considered.
+
+The recommendation should present one primary replenishment quantity associated with the selected replenishment planning point. Alternative quantities from different planning points should not be presented as competing recommendations unless the planner explicitly requested a scenario comparison.
+
+When projected stockout exposure exists, the recommendation should clearly identify the first projected stockout week and the associated shortage signal.
+
+When confirmed or standard replenishment cannot arrive before the projected stockout, the recommendation should clearly identify the timing risk. Where supported by POL-106, the recommendation should also identify the appropriate timing action, such as reviewing an expedite or earlier-supply option.
+
+The primary replenishment action and timing action should be distinguished clearly.
+
+For example:
+
+**Primary action:** Increase replenishment by the validated order quantity.
+
+**Timing action:** Review expedite or earlier supply because standard replenishment cannot arrive before the projected stockout.
+
+Recommendations should explain the relevant inventory, demand, incoming-supply, supplier-constraint, and timing conditions rather than relying only on the final category.
+
 
 ## 11. Exceptions and Planner Review
 
