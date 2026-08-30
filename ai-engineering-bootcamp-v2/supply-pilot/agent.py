@@ -181,7 +181,7 @@ async def run_agent(message: str, event_callback=None):
         parts=[types.Part(text=message)]
     )
 
-    run_config = RunConfig(max_llm_calls=8)
+    run_config = RunConfig(max_llm_calls=12)
 
     # Initialize trace data before the agent starts
     final_response = None

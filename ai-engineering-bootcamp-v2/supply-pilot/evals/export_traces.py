@@ -30,12 +30,16 @@ SELECT
     t.error_message,
     r.open_coding_notes
 FROM trace_reviews r
-JOIN agent_traces t ON t.id = r.trace_id
-JOIN golden_cases g ON g.id = r.golden_case_id
-ORDER BY g.case_number;
+JOIN agent_traces t
+    ON t.id = r.trace_id
+JOIN golden_cases g
+    ON g.id = r.golden_case_id
+WHERE g.case_number = 20
+ORDER BY r.id DESC
+LIMIT 1;
 """
 
-output_path = Path(__file__).parent / "traces.jsonl"
+output_path = Path(__file__).parent / "traces_after_llm_limit.jsonl"
 
 with psycopg.connect(DATABASE_URL) as conn:
     with conn.cursor() as cur:
@@ -46,6 +50,8 @@ with psycopg.connect(DATABASE_URL) as conn:
 with output_path.open("w", encoding="utf-8") as file:
     for row in rows:
         record = dict(zip(columns, row))
-        file.write(json.dumps(record, default=str, ensure_ascii=False) + "\n")
+        file.write(
+            json.dumps(record, default=str, ensure_ascii=False) + "\n"
+        )
 
-print(f"Exported {len(rows)} traces to {output_path}")
+print(f"Exported {len(rows)} trace to {output_path}")

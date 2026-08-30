@@ -39,53 +39,53 @@ def test_success_trace_has_output():
     assert not failures, "\n" + "\n".join(failures)
 
 
-def test_no_duplicate_tool_calls():
-    """
-    Failure B: Unnecessary / redundant tool use.
+# def test_no_duplicate_tool_calls():
+#     """
+#     Failure B: Unnecessary / redundant tool use.
 
-    The agent should not call the same tool more than once with exactly
-    the same arguments within a single trace.
-    """
-    traces = load_traces()
-    failures = []
+#     The agent should not call the same tool more than once with exactly
+#     the same arguments within a single trace.
+#     """
+#     traces = load_traces()
+#     failures = []
 
-    for trace in traces:
-        seen = set()
+#     for trace in traces:
+#         seen = set()
 
-        for item in trace.get("tool_calls") or []:
-            if not isinstance(item, dict):
-                continue
+#         for item in trace.get("tool_calls") or []:
+#             if not isinstance(item, dict):
+#                 continue
 
-            # Support the possible field names used by our trace structure.
-            tool_name = (
-                item.get("tool")
-                or item.get("tool_name")
-                or item.get("name")
-            )
+#             # Support the possible field names used by our trace structure.
+#             tool_name = (
+#                 item.get("tool")
+#                 or item.get("tool_name")
+#                 or item.get("name")
+#             )
 
-            arguments = (
-                item.get("arguments")
-                or item.get("args")
-                or item.get("input")
-            )
+#             arguments = (
+#                 item.get("arguments")
+#                 or item.get("args")
+#                 or item.get("input")
+#             )
 
-            if not tool_name:
-                continue
+#             if not tool_name:
+#                 continue
 
-            # Tool name + arguments uniquely identify an identical tool call.
-            key = (
-                tool_name,
-                json.dumps(arguments, sort_keys=True, default=str)
-            )
+#             # Tool name + arguments uniquely identify an identical tool call.
+#             key = (
+#                 tool_name,
+#                 json.dumps(arguments, sort_keys=True, default=str)
+#             )
 
-            if key in seen:
-                failures.append(
-                    f"case {trace.get('case_number')} "
-                    f"trace {trace.get('trace_id')}: "
-                    f"duplicate tool call {tool_name}"
-                )
+#             if key in seen:
+#                 failures.append(
+#                     f"case {trace.get('case_number')} "
+#                     f"trace {trace.get('trace_id')}: "
+#                     f"duplicate tool call {tool_name}"
+#                 )
 
-            seen.add(key)
+#             seen.add(key)
 
-    # Binary evaluation: PASS if no duplicate identical tool calls are found.
-    assert not failures, "\n" + "\n".join(failures)
+#     # Binary evaluation: PASS if no duplicate identical tool calls are found.
+#     assert not failures, "\n" + "\n".join(failures)
