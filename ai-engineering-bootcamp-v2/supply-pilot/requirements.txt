@@ -18,3 +18,4 @@ python-dotenv>=1.0.0
 langgraph
 langchain-core
 langchain-google-genai
+pytest
