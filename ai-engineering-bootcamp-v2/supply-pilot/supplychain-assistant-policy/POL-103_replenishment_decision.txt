@@ -60,17 +60,16 @@ Similarly, a healthy current inventory position may still require additional rep
 
 ### 4.1 Replenishment Planning Point
 
-When a replenishment requirement is being calculated and projected stockout exposure exists, the default replenishment planning point is the **first projected stockout week**.
+When a replenishment requirement is being calculated and the planner does not explicitly request a future planning week, the default replenishment planning point is CW.
 
 The projected inventory position, forward demand rate, WOS, target inventory, gap-to-target, and replenishment requirement must all be evaluated using the same selected planning point.
 
 Values from different planning weeks must not be combined when determining a replenishment requirement.
 
-If a planner explicitly requests a different planning week, scenario, or what-if analysis, the requested planning point should be used instead of the default first-stockout planning point.
+If a planner explicitly requests a different planning week, scenario, or what-if analysis, the requested planning point should be used instead.
 
-For example, if the first projected stockout occurs at CW+1, CW+1 should normally be used as the replenishment planning point. If the planner explicitly asks for the expected position at CW+3, the calculation should instead use CW+3 and the corresponding forward demand and projected inventory values.
+Projected stockout timing must be assessed separately. The first projected stockout week is used to evaluate supply risk, arrival timing, and whether an expedite or earlier-supply action should be reviewed; it does not automatically replace the replenishment planning point.
 
-If no projected stockout exists, the relevant planning point should be selected according to the planning question being evaluated and the available future inventory position.
 
 ## 5. Increase Replenishment
 
@@ -134,12 +133,13 @@ The standard decision sequence is:
 3. Identify confirmed incoming supply and expected arrival dates.
 4. Project inventory across the relevant planning horizon.
 5. Identify potential stockout or overstock risk.
-6. If stockout exposure exists and no alternative planning point was explicitly requested, select the first projected stockout week as the replenishment planning point.
+6. Select the replenishment planning point: use CW by default unless the planner explicitly requests another planning week, scenario, or what-if analysis.
 7. Calculate the replenishment requirement consistently at the selected planning point.
-8. Determine whether replenishment should be increased, maintained, reduced, or delayed.
-9. Validate the proposed quantity against supplier ordering constraints.
-10. Assess whether confirmed or standard replenishment can arrive in time.
-11. Where timing risk exists, evaluate the appropriate action under POL-106.
+8. Separately identify any projected stockout week for timing and supply-risk analysis.
+9. Determine whether replenishment should be increased, maintained, reduced, or delayed.
+10. Validate the proposed quantity against supplier ordering constraints.
+11. Assess whether confirmed or standard replenishment can arrive in time.
+12. Where timing risk exists, evaluate the appropriate action under POL-106.
 
 ## 10. Replenishment Recommendations
 
@@ -200,4 +200,3 @@ A reduction should be considered when projected inventory creates material overs
 A delay should be considered when supply remains necessary but its current arrival timing would create unnecessary excess inventory.
 
 No replenishment action should be based on current WOS alone.
-

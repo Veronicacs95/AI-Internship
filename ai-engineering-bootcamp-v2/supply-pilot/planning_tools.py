@@ -696,61 +696,43 @@ def calculate_replenishment_requirement(
         "required_qty": round(required_qty, 2),
         "replenishment_required": required_qty > 0,
     }
-
 def select_replenishment_planning_point(
-projection_rows: list[dict],
-requested_planning_week: str | None = None,
+    projection_rows: list[dict],
+    requested_planning_week: str | None = None,
 ) -> dict:
     """
     Select the authoritative planning point for replenishment calculations.
 
-    MUST be called for replenishment recommendations after
-    calculate_projected_inventory() and before forward-demand,
-    WOS, target, gap, and replenishment calculations.
-
-    Do not select the replenishment planning point directly from
-    detect_stockout_exposure output.
-
     Rules:
-    - If the user explicitly requests a planning week, use it.
-    - Otherwise, if stockout exposure exists, use the first projected stockout week.
-    - Otherwise, use CW.
+    - If the user explicitly requests a planning week, use that week.
+    - Otherwise, use CW as the default replenishment decision point.
+    - Stockout timing must be assessed separately using stockout/risk tools.
 
     All downstream replenishment calculations must use the
     planning_week and projected_inventory returned by this tool.
     """
 
-if requested_planning_week:
-    for row in projection_rows:
-        if row["planning_week"] == requested_planning_week:
-            return {
-                "planning_week": row["planning_week"],
-                "week_start": row["week_start"],
-                "projected_inventory": row["projected_inventory"],
-                "unmet_demand": row["unmet_demand"],
-                "selection_reason": "user_requested_planning_week",
-            }
+    if requested_planning_week:
+        for row in projection_rows:
+            if row["planning_week"] == requested_planning_week:
+                return {
+                    "planning_week": row["planning_week"],
+                    "week_start": row["week_start"],
+                    "projected_inventory": row["projected_inventory"],
+                    "unmet_demand": row["unmet_demand"],
+                    "selection_reason": "user_requested_planning_week",
+                }
 
-    raise ValueError(
-        f"Planning week {requested_planning_week} not found in projection."
-    )
+        raise ValueError(
+            f"Planning week {requested_planning_week} not found in projection."
+        )
 
-stockout_rows = [
-    row for row in projection_rows
-    if row["unmet_demand"] > 0
-]
-
-if stockout_rows:
-    selected = stockout_rows[0]
-    reason = "first_projected_stockout"
-else:
     selected = projection_rows[0]
-    reason = "no_projected_stockout_use_cw"
 
-return {
-    "planning_week": selected["planning_week"],
-    "week_start": selected["week_start"],
-    "projected_inventory": selected["projected_inventory"],
-    "unmet_demand": selected["unmet_demand"],
-    "selection_reason": reason,
-}
+    return {
+        "planning_week": selected["planning_week"],
+        "week_start": selected["week_start"],
+        "projected_inventory": selected["projected_inventory"],
+        "unmet_demand": selected["unmet_demand"],
+        "selection_reason": "default_current_week",
+    }
