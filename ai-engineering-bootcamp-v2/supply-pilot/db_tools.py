@@ -287,7 +287,7 @@ def save_agent_trace(trace: dict):
                     json.dumps(trace["tool_calls"], default=str),
                     trace["assistant_output"],
                     trace["llm_calls"],
-                    "success",
-                    None,
+                    trace["status"],
+                    trace["error_message"],
                 ),
             )
