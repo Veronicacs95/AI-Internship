@@ -701,14 +701,24 @@ def select_replenishment_planning_point(
 projection_rows: list[dict],
 requested_planning_week: str | None = None,
 ) -> dict:
-"""
-Select the planning week for replenishment calculations.
+    """
+    Select the authoritative planning point for replenishment calculations.
 
-Rules:
-- If the user explicitly requests a planning week, use that week.
-- Otherwise, if stockout exposure exists, use the first projected stockout week.
-- Otherwise, use CW.
-"""
+    MUST be called for replenishment recommendations after
+    calculate_projected_inventory() and before forward-demand,
+    WOS, target, gap, and replenishment calculations.
+
+    Do not select the replenishment planning point directly from
+    detect_stockout_exposure output.
+
+    Rules:
+    - If the user explicitly requests a planning week, use it.
+    - Otherwise, if stockout exposure exists, use the first projected stockout week.
+    - Otherwise, use CW.
+
+    All downstream replenishment calculations must use the
+    planning_week and projected_inventory returned by this tool.
+    """
 
 if requested_planning_week:
     for row in projection_rows:

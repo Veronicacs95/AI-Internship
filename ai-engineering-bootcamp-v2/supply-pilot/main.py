@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from agent import run_agent
 from db_tools import get_inventory, get_product_data, get_supplier_data, get_forecast, get_sales_history, get_open_pos,save_agent_trace
-from rag_tools import PINECONE_INDEX_NAME, pinecone_index, extract_metadata, chunk_text, build_embedding_texts, embed_chunks, build_vectors, upsert_vectors, retrieve_chunks, select_replenishment_planning_point
+from rag_tools import PINECONE_INDEX_NAME, pinecone_index, extract_metadata, chunk_text, build_embedding_texts, embed_chunks, build_vectors, upsert_vectors, retrieve_chunks, 
 
 
 # --------------------------------------------------
