@@ -11,8 +11,25 @@ from pydantic import BaseModel
 
 from agent import run_agent
 from db_tools import get_inventory, get_product_data, get_supplier_data, get_forecast, get_sales_history, get_open_pos,save_agent_trace
+from evals_db import get_trace_evaluation
 from rag_tools import PINECONE_INDEX_NAME, pinecone_index, extract_metadata, chunk_text, build_embedding_texts, embed_chunks, build_vectors, upsert_vectors, retrieve_chunks
 
+# SUPPLY-PILOT
+# │
+# ├── main.py
+# │   └── FastAPI → SupplyPilot agent API
+# │
+# ├── agent.py
+# ├── db_tools.py
+# ├── planning_tools.py
+# ├── rag_tools.py
+# │
+# └── evals/
+#     ├── evals_db.py
+#     │   └── Python functions → PostgreSQL
+#     │
+#     └── streamlit_app.py
+#         └── Streamlit evaluation dashboard
 
 # --------------------------------------------------
 # 1. LOAD ENVIRONMENT
