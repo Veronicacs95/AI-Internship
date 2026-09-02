@@ -60,13 +60,15 @@ Similarly, a healthy current inventory position may still require additional rep
 
 ### 4.1 Replenishment Planning Point
 
-When a replenishment requirement is being calculated and the planner does not explicitly request a future planning week, the default replenishment planning point is CW.
+When a replenishment requirement is being calculated, the default replenishment planning point is the standard replenishment arrival week based on the supplier's lead time.
+
+For example, if the supplier lead time is 4 weeks, the default replenishment planning point is CW+4.
+
+If the planner explicitly requests a different planning week, scenario, or what-if analysis, the requested planning point should be used instead.
 
 The projected inventory position, forward demand rate, WOS, target inventory, gap-to-target, and replenishment requirement must all be evaluated using the same selected planning point.
 
 Values from different planning weeks must not be combined when determining a replenishment requirement.
-
-If a planner explicitly requests a different planning week, scenario, or what-if analysis, the requested planning point should be used instead.
 
 Projected stockout timing must be assessed separately. The first projected stockout week is used to evaluate supply risk, arrival timing, and whether an expedite or earlier-supply action should be reviewed; it does not automatically replace the replenishment planning point.
 
@@ -87,13 +89,8 @@ A recommendation to increase replenishment must also consider supplier lead time
 
 Being below the target WOS range alone does not automatically require an additional purchase order.
 
-## 6. Maintain Replenishment
-
-The existing replenishment plan should normally be maintained when projected inventory is expected to remain within the target coverage range and no significant change in demand or supply is identified.
-
-Maintaining the plan may also be appropriate when current WOS is below target but confirmed incoming supply is expected to restore inventory coverage within an acceptable timeframe.
-
-Planners should avoid placing additional orders solely to correct a temporary low inventory position when sufficient replacement supply is already confirmed.
+##6. Select the replenishment planning point: 
+use the standard replenishment arrival week based on supplier lead time by default, unless the planner explicitly requests another planning week, scenario, or what-if analysis.
 
 ## 7. Reduce Replenishment
 

@@ -46,10 +46,13 @@ TOOL USE:
 - get_open_pos: outstanding incoming supply and expected arrivals.
 - search_docs: NovaTech policies, rules, and thresholds.
 
+
 REPLENISHMENT PLANNING POINT:
-- When evaluating a replenishment requirement and the user does not explicitly specify a planning week, use CW as the replenishment planning point.
-- If the user explicitly requests a future planning week or what-if scenario, use the requested planning week instead.
-- Use select_replenishment_planning_point after calculate_projected_inventory to determine the authoritative replenishment planning point.
+- When evaluating a replenishment requirement, first retrieve the supplier lead time using get_supplier_data.
+- After calculate_projected_inventory, always use select_replenishment_planning_point to determine the authoritative replenishment planning point.
+- If the user explicitly requests a planning week, pass it as requested_planning_week.
+- Otherwise, pass the supplier lead_time_weeks to select_replenishment_planning_point and use the standard replenishment arrival week returned by the tool.
+- Do not assume CW as the default planning point unless lead_time_weeks = 0.
 - Once a replenishment planning point is selected, use that same planning point consistently for projected inventory, forward average demand, projected WOS, target inventory, gap-to-target, and replenishment requirement.
 - Do not mix values calculated for different planning weeks.
 - Use stockout detection separately for timing and supply-risk analysis. The first projected stockout week must not automatically replace the replenishment planning point.
