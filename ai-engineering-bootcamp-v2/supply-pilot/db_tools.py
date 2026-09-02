@@ -257,3 +257,170 @@ def get_open_pos(sku: str):
 
 
 # -------------------------------
+
+
+def save_agent_trace(trace: dict) -> int:
+    """
+    Persist one complete SupplyPilot execution trace.
+
+    This is application infrastructure, not an agent-facing tool.
+
+    Returns:
+        The database ID of the newly created agent trace.
+    """
+
+    with psycopg.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO agent_traces (
+                    user_input,
+                    retrieved_context,
+                    tool_calls,
+                    assistant_output,
+                    llm_calls,
+                    status,
+                    error_message
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id;
+                """,
+                (
+                    trace.get("user_input"),
+                    json.dumps(
+                        trace.get("retrieved_context", []),
+                        default=str
+                    ),
+                    json.dumps(
+                        trace.get("tool_calls", []),
+                        default=str
+                    ),
+                    trace.get("assistant_output"),
+                    trace.get("llm_calls", 0),
+                    trace.get("status"),
+                    trace.get("error_message"),
+                ),
+            )
+
+            trace_id = cursor.fetchone()[0]
+
+        conn.commit()
+
+    return trace_id
+
+def save_recommendation_memory(memory: dict, trace_id: int | None = None) -> int:
+"""
+Save one validated replenishment recommendation as episodic memory.
+
+This function must only be called after the recommendation
+passes the application's write gate.
+
+Returns:
+    The ID of the created recommendation memory row.
+"""
+
+with psycopg.connect(DATABASE_URL) as conn:
+    with conn.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO recommendation_memory (
+                sku,
+                trace_id,
+                decision,
+                recommended_order_qty,
+
+                decision_date,
+                current_week,
+                planning_week,
+                planning_week_start,
+
+                available_inventory_cw,
+                projected_inventory_planning_week,
+
+                forward_average_demand,
+                projected_wos,
+                target_wos,
+                target_inventory,
+
+                gap_to_target,
+                initial_replenishment_requirement,
+
+                moq,
+                order_multiple,
+
+                stockout_exposure,
+                first_stockout_week,
+                first_stockout_date,
+                first_stockout_unmet_demand,
+
+                standard_arrival_week,
+                arrival_risk,
+                stockout_gap_weeks,
+
+                policy_ids,
+                reason_summary,
+
+                source,
+                trust_level
+            )
+            VALUES (
+                %s, %s, %s, %s,
+                %s, %s, %s, %s,
+                %s, %s,
+                %s, %s, %s, %s,
+                %s, %s,
+                %s, %s,
+                %s, %s, %s, %s,
+                %s, %s, %s,
+                %s::jsonb, %s,
+                %s, %s
+            )
+            RETURNING id;
+            """,
+            (
+                memory["sku"],
+                trace_id,
+                memory["decision"],
+                memory.get("recommended_order_qty", 0),
+
+                memory.get("decision_date"),
+                memory["current_week"],
+                memory["planning_week"],
+                memory.get("planning_week_start"),
+
+                memory.get("available_inventory_cw"),
+                memory.get("projected_inventory_planning_week"),
+
+                memory.get("forward_average_demand"),
+                memory.get("projected_wos"),
+                memory.get("target_wos"),
+                memory.get("target_inventory"),
+
+                memory.get("gap_to_target"),
+                memory.get("initial_replenishment_requirement"),
+
+                memory.get("moq"),
+                memory.get("order_multiple"),
+
+                memory.get("stockout_exposure", False),
+                memory.get("first_stockout_week"),
+                memory.get("first_stockout_date"),
+                memory.get("first_stockout_unmet_demand"),
+
+                memory.get("standard_arrival_week"),
+                memory.get("arrival_risk", False),
+                memory.get("stockout_gap_weeks"),
+
+                json.dumps(memory.get("policy_ids", [])),
+                memory.get("reason_summary"),
+
+                "supplypilot_replenishment_skill",
+                "validated",
+            ),
+        )
+
+        memory_id = cursor.fetchone()[0]
+
+    conn.commit()
+
+return memory_id

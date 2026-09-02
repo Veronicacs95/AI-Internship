@@ -696,43 +696,90 @@ def calculate_replenishment_requirement(
         "required_qty": round(required_qty, 2),
         "replenishment_required": required_qty > 0,
     }
+
+
+
+
 def select_replenishment_planning_point(
     projection_rows: list[dict],
+    lead_time_weeks: int,
     requested_planning_week: str | None = None,
 ) -> dict:
     """
     Select the authoritative planning point for replenishment calculations.
 
+    The planning point represents the week when a newly placed standard
+    replenishment order is expected to arrive and therefore become available
+    to affect the inventory position.
+
     Rules:
     - If the user explicitly requests a planning week, use that week.
-    - Otherwise, use CW as the default replenishment decision point.
-    - Stockout timing must be assessed separately using stockout/risk tools.
+    - Otherwise, use the supplier's standard lead time to select the default
+      planning week.
+    - For example, if lead_time_weeks = 6, the default planning point is CW+6.
+    - The projected inventory must come from calculate_projected_inventory()
+      and correspond to the selected planning week.
+    - Stockout timing before the replenishment arrival must be assessed
+      separately using the stockout and replenishment-arrival-risk tools.
+    - All downstream replenishment calculations must use the planning_week
+      and projected_inventory returned by this tool.
 
-    All downstream replenishment calculations must use the
-    planning_week and projected_inventory returned by this tool.
+    Args:
+        projection_rows:
+            Weekly projected inventory output from
+            calculate_projected_inventory().
+
+        lead_time_weeks:
+            Supplier standard lead time in weeks.
+            Example: 6 means a new order placed in CW is expected
+            to arrive in CW+6.
+
+        requested_planning_week:
+            Optional planning week explicitly requested by the user.
+            Examples: "CW", "CW+2", "CW+6".
+            If provided, this overrides the standard-arrival-week default.
+
+    Returns:
+        A dictionary containing:
+        - planning_week
+        - week_start
+        - projected_inventory
+        - unmet_demand
+        - selection_reason
     """
 
+    if lead_time_weeks < 0:
+        raise ValueError("Lead time cannot be negative.")
+
+    # If the user explicitly requests a planning week, use it instead of
+    # the standard replenishment arrival week.
     if requested_planning_week:
-        for row in projection_rows:
-            if row["planning_week"] == requested_planning_week:
-                return {
-                    "planning_week": row["planning_week"],
-                    "week_start": row["week_start"],
-                    "projected_inventory": row["projected_inventory"],
-                    "unmet_demand": row["unmet_demand"],
-                    "selection_reason": "user_requested_planning_week",
-                }
+        target_planning_week = requested_planning_week
+        selection_reason = "user_requested_planning_week"
 
-        raise ValueError(
-            f"Planning week {requested_planning_week} not found in projection."
+    else:
+        # A new order placed in CW cannot affect today's inventory position.
+        # Therefore, the default replenishment planning point is the week
+        # when a standard order is expected to arrive based on supplier lead time.
+        target_planning_week = (
+            "CW"
+            if lead_time_weeks == 0
+            else f"CW+{lead_time_weeks}"
         )
+        selection_reason = "standard_replenishment_arrival_week"
 
-    selected = projection_rows[0]
+    # Find the projected inventory position for the selected planning week.
+    for row in projection_rows:
+        if row["planning_week"] == target_planning_week:
+            return {
+                "planning_week": row["planning_week"],
+                "week_start": row["week_start"],
+                "projected_inventory": row["projected_inventory"],
+                "unmet_demand": row["unmet_demand"],
+                "selection_reason": selection_reason,
+            }
 
-    return {
-        "planning_week": selected["planning_week"],
-        "week_start": selected["week_start"],
-        "projected_inventory": selected["projected_inventory"],
-        "unmet_demand": selected["unmet_demand"],
-        "selection_reason": "default_current_week",
-    }
+    raise ValueError(
+        f"Planning week {target_planning_week} not found in projection. "
+        "Ensure the forecast horizon covers the supplier lead time."
+    )

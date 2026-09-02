@@ -101,7 +101,7 @@ DONE:
         # RAG
         search_docs,
         # DB
-        get_inventory,get_product_data,get_supplier_data,get_forecast,get_sales_history,get_open_pos,save_agent_trace,
+        get_inventory,get_product_data,get_supplier_data,get_forecast,get_sales_history,get_open_pos,
         # Deterministic planning
         calculate_projected_inventory,calculate_forward_average_demand,calculate_projected_wos,
         calculate_target_inventory,calculate_gap_to_target,calculate_replenishment_requirement,
