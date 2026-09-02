@@ -699,7 +699,6 @@ def calculate_replenishment_requirement(
 
 
 
-
 def select_replenishment_planning_point(
     projection_rows: list[dict],
     lead_time_weeks: int,
