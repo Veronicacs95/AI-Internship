@@ -12,6 +12,9 @@ from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 from datetime import date
 
+from skills.replenishment_recommendation.replenishment_workflow import (
+    run_replenishment_workflow,)
+
 from rag_tools import search_docs
 from db_tools import (
     get_inventory,
@@ -302,6 +305,22 @@ root_agent = Agent(
     - If the user asks what should be done now, use current DB data and planning tools.
     - Clearly distinguish a previous recommendation from a new current recommendation.
 
+
+    REPLENISHMENT RECOMMENDATIONS:
+
+    - When the user asks whether to increase, maintain, reduce, delay,
+    place, or change replenishment for a SKU, use
+    run_replenishment_workflow.
+    - Do not manually reproduce the replenishment workflow using
+    individual planning calculations.
+    - Treat the structured output of run_replenishment_workflow
+    as the authoritative calculation result.
+    - Use get_latest_recommendation only when the user asks about
+    a previous or historical recommendation.
+    - Current recommendations must use current operational data,
+    not recommendation memory.
+
+
     DONE:
     - Answer as soon as sufficient evidence is available.
     - For factual questions, return the requested facts without unnecessary analysis.
@@ -311,6 +330,13 @@ root_agent = Agent(
     - If information is missing, state what is missing or ask the smallest necessary clarification question rather than guessing.
     """,
     tools=[
+
+        # High-level workflows
+        run_replenishment_workflow,
+
+        # Memory
+        get_latest_recommendation,
+
         # RAG
         search_docs,
 
@@ -321,7 +347,6 @@ root_agent = Agent(
         get_forecast,
         get_sales_history,
         get_open_pos,
-        get_latest_recommendation,
 
         # Deterministic planning
         calculate_projected_inventory,
