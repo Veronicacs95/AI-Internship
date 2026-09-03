@@ -20,7 +20,7 @@ from db_tools import (
     get_forecast,
     get_sales_history,
     get_open_pos,
-    save_agent_trace,save_recommendation_memory,
+    save_agent_trace,save_recommendation_memory,get_latest_recommendation,
 )
 from planning_tools import (
     calculate_projected_inventory,
@@ -296,6 +296,12 @@ root_agent = Agent(
     - Separate the primary replenishment action from any timing action. For example: primary action = INCREASE; timing action = review expedite or earlier supply.
     - Recommendations must be supported by the deterministic planning results and, when company rules determine the action, relevant retrieved NovaTech policy.
 
+    MEMORY:
+    - Use get_latest_recommendation when the user asks about a previous,last, prior, historical, or most recent SupplyPilot replenishment recommendation.
+    - Do not use recommendation memory as current operational truth.
+    - If the user asks what should be done now, use current DB data and planning tools.
+    - Clearly distinguish a previous recommendation from a new current recommendation.
+
     DONE:
     - Answer as soon as sufficient evidence is available.
     - For factual questions, return the requested facts without unnecessary analysis.
@@ -315,6 +321,7 @@ root_agent = Agent(
         get_forecast,
         get_sales_history,
         get_open_pos,
+        get_latest_recommendation,
 
         # Deterministic planning
         calculate_projected_inventory,

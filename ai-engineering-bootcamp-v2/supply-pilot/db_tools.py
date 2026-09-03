@@ -256,6 +256,108 @@ def get_open_pos(sku: str):
 
 
 
+def get_latest_recommendation(sku: str):
+    """
+    Get the latest validated replenishment recommendation for one SKU.
+
+    Use this tool when the user asks what SupplyPilot previously recommended
+    for a SKU, such as:
+    - "What was the last recommendation for CAB-604?"
+    - "What did we decide last time for LAP-101?"
+    - "Show me the latest replenishment recommendation for this SKU."
+
+    Returns:
+        The latest validated recommendation memory row for the SKU.
+        Returns None if no validated recommendation exists.
+    """
+
+    with psycopg.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    id,
+                    sku,
+                    trace_id,
+                    decision,
+                    recommended_order_qty,
+                    decision_date,
+                    current_week,
+                    planning_week,
+                    planning_week_start,
+                    available_inventory_cw,
+                    projected_inventory_planning_week,
+                    forward_average_demand,
+                    projected_wos,
+                    target_wos,
+                    target_inventory,
+                    gap_to_target,
+                    initial_replenishment_requirement,
+                    moq,
+                    order_multiple,
+                    stockout_exposure,
+                    first_stockout_week,
+                    first_stockout_date,
+                    first_stockout_unmet_demand,
+                    standard_arrival_week,
+                    arrival_risk,
+                    stockout_gap_weeks,
+                    policy_ids,
+                    reason_summary,
+                    source,
+                    trust_level,
+                    created_at
+                FROM recommendation_memory
+                WHERE sku = %s
+                  AND trust_level = 'validated'
+                ORDER BY created_at DESC
+                LIMIT 1;
+                """,
+                (sku,),
+            )
+
+            row = cursor.fetchone()
+
+    if row is None:
+        return None
+
+    return {
+        "id": row[0],
+        "sku": row[1],
+        "trace_id": row[2],
+        "decision": row[3],
+        "recommended_order_qty": row[4],
+        "decision_date": str(row[5]) if row[5] else None,
+        "current_week": row[6],
+        "planning_week": row[7],
+        "planning_week_start": str(row[8]) if row[8] else None,
+        "available_inventory_cw": row[9],
+        "projected_inventory_planning_week": float(row[10]) if row[10] is not None else None,
+        "forward_average_demand": float(row[11]) if row[11] is not None else None,
+        "projected_wos": float(row[12]) if row[12] is not None else None,
+        "target_wos": float(row[13]) if row[13] is not None else None,
+        "target_inventory": float(row[14]) if row[14] is not None else None,
+        "gap_to_target": float(row[15]) if row[15] is not None else None,
+        "initial_replenishment_requirement": float(row[16]) if row[16] is not None else None,
+        "moq": row[17],
+        "order_multiple": row[18],
+        "stockout_exposure": row[19],
+        "first_stockout_week": row[20],
+        "first_stockout_date": str(row[21]) if row[21] else None,
+        "first_stockout_unmet_demand": float(row[22]) if row[22] is not None else None,
+        "standard_arrival_week": row[23],
+        "arrival_risk": row[24],
+        "stockout_gap_weeks": row[25],
+        "policy_ids": row[26],
+        "reason_summary": row[27],
+        "source": row[28],
+        "trust_level": row[29],
+        "created_at": str(row[30]) if row[30] else None,
+    }
+
+
+
+
 # -------------------------------
 
 
