@@ -19,7 +19,7 @@ from db_tools import (
     get_forecast,
     get_sales_history,
     get_open_pos,
-    save_agent_trace,
+    save_agent_trace,save_recommendation_memory,
 )
 from planning_tools import (
     calculate_projected_inventory,
@@ -227,82 +227,82 @@ root_agent = Agent(
         "and asks for clarification when ambiguity could materially change the answer."
     ),
     instruction="""
-You are SupplyPilot, NovaTech Retail's supply planning copilot.
+    You are SupplyPilot, NovaTech Retail's supply planning copilot.
 
-GOAL:
-Help business users understand inventory, demand, incoming supply, supply risk, planning rules, and replenishment needs.
-Users may use informal or incomplete business language and are not expected to know how SupplyPilot works.
+    GOAL:
+    Help business users understand inventory, demand, incoming supply, supply risk, planning rules, and replenishment needs.
+    Users may use informal or incomplete business language and are not expected to know how SupplyPilot works.
 
-HUMAN INTERACTION:
-- Infer the user's intent when one interpretation is clearly most likely and low-risk.
-- If ambiguity could materially change the data, calculation, or recommendation, ask one concise clarification question.
-- Prefer clarification over guessing or broad retrieval.
-- Never invent business data, calculations, assumptions, or company policy.
+    HUMAN INTERACTION:
+    - Infer the user's intent when one interpretation is clearly most likely and low-risk.
+    - If ambiguity could materially change the data, calculation, or recommendation, ask one concise clarification question.
+    - Prefer clarification over guessing or broad retrieval.
+    - Never invent business data, calculations, assumptions, or company policy.
 
-TOOL USE:
-- Use the minimum tools required and stop when sufficient evidence is available.
-- Do not retrieve data merely to enrich an answer.
-- get_inventory: current stock.
-- get_product_data: product and ordering constraints.
-- get_supplier_data: supplier and lead time.
-- get_forecast: future forecast demand.
-- get_sales_history: historical sales.
-- get_open_pos: outstanding incoming supply and expected arrivals.
-- search_docs: NovaTech policies, rules, and thresholds.
+    TOOL USE:
+    - Use the minimum tools required and stop when sufficient evidence is available.
+    - Do not retrieve data merely to enrich an answer.
+    - get_inventory: current stock.
+    - get_product_data: product and ordering constraints.
+    - get_supplier_data: supplier and lead time.
+    - get_forecast: future forecast demand.
+    - get_sales_history: historical sales.
+    - get_open_pos: outstanding incoming supply and expected arrivals.
+    - search_docs: NovaTech policies, rules, and thresholds.
 
-REPLENISHMENT PLANNING POINT:
-- When evaluating a replenishment requirement, first retrieve the supplier lead time using get_supplier_data.
-- After calculate_projected_inventory, always use select_replenishment_planning_point to determine the authoritative replenishment planning point.
-- If the user explicitly requests a planning week, pass it as requested_planning_week.
-- Otherwise, pass the supplier lead_time_weeks to select_replenishment_planning_point and use the standard replenishment arrival week returned by the tool.
-- Do not assume CW as the default planning point unless lead_time_weeks = 0.
-- Once a replenishment planning point is selected, use that same planning point consistently for projected inventory, forward average demand, projected WOS, target inventory, gap-to-target, and replenishment requirement.
-- Do not mix values calculated for different planning weeks.
-- Use stockout detection separately for timing and supply-risk analysis. The first projected stockout week must not automatically replace the replenishment planning point.
-- Use deterministic planning tools to calculate all values for the selected planning point.
+    REPLENISHMENT PLANNING POINT:
+    - When evaluating a replenishment requirement, first retrieve the supplier lead time using get_supplier_data.
+    - After calculate_projected_inventory, always use select_replenishment_planning_point to determine the authoritative replenishment planning point.
+    - If the user explicitly requests a planning week, pass it as requested_planning_week.
+    - Otherwise, pass the supplier lead_time_weeks to select_replenishment_planning_point and use the standard replenishment arrival week returned by the tool.
+    - Do not assume CW as the default planning point unless lead_time_weeks = 0.
+    - Once a replenishment planning point is selected, use that same planning point consistently for projected inventory, forward average demand, projected WOS, target inventory, gap-to-target, and replenishment requirement.
+    - Do not mix values calculated for different planning weeks.
+    - Use stockout detection separately for timing and supply-risk analysis. The first projected stockout week must not automatically replace the replenishment planning point.
+    - Use deterministic planning tools to calculate all values for the selected planning point.
 
-CALCULATIONS:
-- All planning calculations and derived numerical values must come from deterministic planning tools.
-- Never calculate, estimate, extrapolate, transform, or derive new planning values yourself from tool outputs, even when the arithmetic is simple.
-- Present planning values using the meaning and planning period explicitly returned by the deterministic tool.
-- Do not relabel or reinterpret a value as a different planning metric or planning period.
-- If a required planning value is unavailable, call the appropriate tool.
-- If no tool provides the required planning value, state that it is unavailable rather than calculating it yourself.
-- Clearly distinguish confirmed business events from hypothetical planning scenarios.
-- A calculated standard arrival week for a potential new order must not be described as a confirmed or scheduled arrival unless an actual purchase order exists in the source data.
+    CALCULATIONS:
+    - All planning calculations and derived numerical values must come from deterministic planning tools.
+    - Never calculate, estimate, extrapolate, transform, or derive new planning values yourself from tool outputs, even when the arithmetic is simple.
+    - Present planning values using the meaning and planning period explicitly returned by the deterministic tool.
+    - Do not relabel or reinterpret a value as a different planning metric or planning period.
+    - If a required planning value is unavailable, call the appropriate tool.
+    - If no tool provides the required planning value, state that it is unavailable rather than calculating it yourself.
+    - Clearly distinguish confirmed business events from hypothetical planning scenarios.
+    - A calculated standard arrival week for a potential new order must not be described as a confirmed or scheduled arrival unless an actual purchase order exists in the source data.
 
-POLICY AND ASSUMPTIONS:
-- Use search_docs when the user explicitly asks about NovaTech policy, rules, thresholds, or required planning actions.
-- For factual or deterministic planning questions, complete the required data retrieval and deterministic calculations before considering policy retrieval.
-- Policy must never calculate, modify, override, or reinterpret deterministic planning values.
-- If deterministic tools identify a material planning risk, such as stockout exposure or replenishment arriving too late, use search_docs only when policy can provide a useful business implication or action.
-- When policy is retrieved proactively, clearly separate the deterministic planning result from the policy-based implication or recommended review.
-- Do not search policy merely to add background information that does not change or clarify the business action.
-- Retrieved NovaTech policy is the source of truth for company rules.
-- Do not replace missing policy with general model knowledge.
-- Do not search policy for an unmet-demand carryover rate unless a documented carryover rule is known to exist.
-- If no documented carryover rule exists, use the planning tool's configured default and identify it as a tool assumption when it materially affects the answer.
-- Clearly distinguish company policy, user assumptions, tool assumptions, source data, and calculated results.
-- Never present a user assumption or tool assumption as NovaTech policy.
-- Do not label values as backlog, lost sales, or similar business concepts unless supported by available data or policy.
+    POLICY AND ASSUMPTIONS:
+    - Use search_docs when the user explicitly asks about NovaTech policy, rules, thresholds, or required planning actions.
+    - For factual or deterministic planning questions, complete the required data retrieval and deterministic calculations before considering policy retrieval.
+    - Policy must never calculate, modify, override, or reinterpret deterministic planning values.
+    - If deterministic tools identify a material planning risk, such as stockout exposure or replenishment arriving too late, use search_docs only when policy can provide a useful business implication or action.
+    - When policy is retrieved proactively, clearly separate the deterministic planning result from the policy-based implication or recommended review.
+    - Do not search policy merely to add background information that does not change or clarify the business action.
+    - Retrieved NovaTech policy is the source of truth for company rules.
+    - Do not replace missing policy with general model knowledge.
+    - Do not search policy for an unmet-demand carryover rate unless a documented carryover rule is known to exist.
+    - If no documented carryover rule exists, use the planning tool's configured default and identify it as a tool assumption when it materially affects the answer.
+    - Clearly distinguish company policy, user assumptions, tool assumptions, source data, and calculated results.
+    - Never present a user assumption or tool assumption as NovaTech policy.
+    - Do not label values as backlog, lost sales, or similar business concepts unless supported by available data or policy.
 
-ACTIONABLE RECOMMENDATIONS:
-- When the user asks what replenishment action should be taken, the final answer must provide one clear primary replenishment action: INCREASE, MAINTAIN, REDUCE, or DELAY.
-- When INCREASE is recommended and a replenishment quantity has been calculated, state the final valid order quantity after applying MOQ and order-multiple constraints.
-- Do not present multiple competing order quantities without selecting the one associated with the chosen replenishment planning point.
-- When projected stockout exposure exists, explicitly state the first stockout week and the relevant shortage or unmet-demand result returned by the deterministic tools.
-- When standard or confirmed supply cannot arrive before the projected stockout, explicitly state the timing risk and, when supported by retrieved NovaTech policy, recommend the appropriate review such as expedite or earlier-supply action.
-- Separate the primary replenishment action from any timing action. For example: primary action = INCREASE; timing action = review expedite or earlier supply.
-- Recommendations must be supported by the deterministic planning results and, when company rules determine the action, relevant retrieved NovaTech policy.
+    ACTIONABLE RECOMMENDATIONS:
+    - When the user asks what replenishment action should be taken, the final answer must provide one clear primary replenishment action: INCREASE, MAINTAIN, REDUCE, or DELAY.
+    - When INCREASE is recommended and a replenishment quantity has been calculated, state the final valid order quantity after applying MOQ and order-multiple constraints.
+    - Do not present multiple competing order quantities without selecting the one associated with the chosen replenishment planning point.
+    - When projected stockout exposure exists, explicitly state the first stockout week and the relevant shortage or unmet-demand result returned by the deterministic tools.
+    - When standard or confirmed supply cannot arrive before the projected stockout, explicitly state the timing risk and, when supported by retrieved NovaTech policy, recommend the appropriate review such as expedite or earlier-supply action.
+    - Separate the primary replenishment action from any timing action. For example: primary action = INCREASE; timing action = review expedite or earlier supply.
+    - Recommendations must be supported by the deterministic planning results and, when company rules determine the action, relevant retrieved NovaTech policy.
 
-DONE:
-- Answer as soon as sufficient evidence is available.
-- For factual questions, return the requested facts without unnecessary analysis.
-- For deterministic planning questions, return the calculated result and relevant supporting facts.
-- For planning judgements or recommendations, use the required business data, deterministic calculations, and relevant NovaTech policy evidence.
-- For replenishment recommendations, finish with one clear primary action and, when applicable, one clear timing action.
-- If information is missing, state what is missing or ask the smallest necessary clarification question rather than guessing.
-""",
+    DONE:
+    - Answer as soon as sufficient evidence is available.
+    - For factual questions, return the requested facts without unnecessary analysis.
+    - For deterministic planning questions, return the calculated result and relevant supporting facts.
+    - For planning judgements or recommendations, use the required business data, deterministic calculations, and relevant NovaTech policy evidence.
+    - For replenishment recommendations, finish with one clear primary action and, when applicable, one clear timing action.
+    - If information is missing, state what is missing or ask the smallest necessary clarification question rather than guessing.
+    """,
     tools=[
         # RAG
         search_docs,
@@ -408,6 +408,170 @@ DONE:
 # - model_fallback
 #
 # --------------------------------------------------
+
+
+def recommendation_memory_write_gate(trace: dict) -> bool:
+    """
+    Decide deterministically whether this trace is safe to store
+    as validated replenishment memory.
+    """
+
+    if trace.get("status") != "success":
+        return False
+
+    if not trace.get("assistant_output"):
+        return False
+
+    tool_calls = trace.get("tool_calls", [])
+
+    observed_tools = {
+        item.get("tool")
+        for item in tool_calls
+        if item.get("type") == "observe"
+    }
+
+    required_tools = {
+        "get_product_data",
+        "get_inventory",
+        "get_supplier_data",
+        "get_forecast",
+        "get_open_pos",
+        "calculate_projected_inventory",
+        "select_replenishment_planning_point",
+        "calculate_forward_average_demand",
+        "calculate_projected_wos",
+        "calculate_target_inventory",
+        "calculate_gap_to_target",
+        "calculate_replenishment_requirement",
+        "adjust_order_quantity",
+        "detect_stockout_exposure",
+        "check_replenishment_arrival_risk",
+    }
+
+    if not required_tools.issubset(observed_tools):
+        return False
+
+    return True
+
+
+def build_recommendation_memory(trace: dict) -> dict:
+    """
+    Build a compact episodic replenishment memory from trusted
+    deterministic tool observations.
+    """
+
+    observations = {
+        item["tool"]: item["observation"]
+        for item in trace.get("tool_calls", [])
+        if item.get("type") == "observe"
+    }
+
+    product = observations["get_product_data"]
+    inventory = observations["get_inventory"]
+    planning_point = observations["select_replenishment_planning_point"]
+    forward_demand = observations["calculate_forward_average_demand"]
+    projected_wos = observations["calculate_projected_wos"]
+    target_inventory = observations["calculate_target_inventory"]
+    gap = observations["calculate_gap_to_target"]
+    requirement = observations["calculate_replenishment_requirement"]
+    adjusted_order = observations["adjust_order_quantity"]
+    stockout = observations["detect_stockout_exposure"]
+    arrival = observations["check_replenishment_arrival_risk"]
+
+    recommended_qty = adjusted_order.get("recommended_order_qty", 0)
+
+    decision = (
+        "INCREASE"
+        if recommended_qty > 0
+        else "MAINTAIN"
+    )
+
+    policy_ids = []
+
+    for item in trace.get("retrieved_context", []):
+        context = item.get("context", {})
+
+        for result in context.get("results", []):
+            document_id = result.get("document_id")
+
+            if document_id and document_id not in policy_ids:
+                policy_ids.append(document_id)
+
+    return {
+        "sku": product["sku"],
+        "decision": decision,
+        "recommended_order_qty": recommended_qty,
+
+        "decision_date": None,
+        "current_week": "CW",
+
+        "planning_week": planning_point["planning_week"],
+        "planning_week_start": planning_point.get("week_start"),
+
+        "available_inventory_cw": inventory.get("available_inventory"),
+        "projected_inventory_planning_week":
+            planning_point.get("projected_inventory"),
+
+        "forward_average_demand":
+            forward_demand.get("average_weekly_demand"),
+
+        "projected_wos":
+            projected_wos.get("projected_wos"),
+
+        "target_wos":
+            target_inventory.get("target_wos"),
+
+        "target_inventory":
+            target_inventory.get("target_inventory"),
+
+        "gap_to_target":
+            gap.get("gap_units"),
+
+        "initial_replenishment_requirement":
+            requirement.get("required_qty"),
+
+        "moq":
+            product.get("moq"),
+
+        "order_multiple":
+            product.get("order_multiple"),
+
+        "stockout_exposure":
+            stockout.get("stockout_exposure", False),
+
+        "first_stockout_week":
+            stockout.get("first_stockout_week"),
+
+        "first_stockout_date":
+            stockout.get("first_stockout_date"),
+
+        "first_stockout_unmet_demand":
+            stockout.get("first_stockout_unmet_demand"),
+
+        "standard_arrival_week":
+            arrival.get("expected_arrival_week"),
+
+        "arrival_risk":
+            arrival.get("arrival_risk", False),
+
+        "stockout_gap_weeks":
+            arrival.get("stockout_gap_weeks"),
+
+        "policy_ids":
+            policy_ids,
+
+        "reason_summary":
+            (
+                f"At {planning_point['planning_week']}, projected inventory "
+                f"is {planning_point.get('projected_inventory')} units versus "
+                f"a target of {target_inventory.get('target_inventory')} units. "
+                f"Initial replenishment requirement is "
+                f"{requirement.get('required_qty')} units and the valid "
+                f"recommended quantity after ordering constraints is "
+                f"{recommended_qty} units."
+            ),
+    }
+
 
 
 async def run_agent(message: str, event_callback=None):
@@ -606,26 +770,27 @@ async def run_agent(message: str, event_callback=None):
 
     finally:
         try:
-            # Always save the trace, whether the run succeeds or fails.
             trace["llm_calls"] = llm_calls
 
-            print(f"\nTOTAL GEMINI CALLS: {llm_calls}")
+            ...
 
-            print("\nTRACE")
-            print(
-                json.dumps(
-                    trace,
-                    indent=2,
-                    ensure_ascii=False,
-                    default=str,
+            trace_id = save_agent_trace(trace)
+
+            if recommendation_memory_write_gate(trace):
+                memory = build_recommendation_memory(trace)
+
+                memory_id = save_recommendation_memory(
+                    memory=memory,
+                    trace_id=trace_id,
                 )
-            )
 
-            save_agent_trace(trace)
+                print(f"\nRECOMMENDATION MEMORY SAVED: {memory_id}")
+            else:
+                print("\nRECOMMENDATION MEMORY NOT SAVED")
+
 
         finally:
-            # Prevent this request's callback from leaking into another
-            # concurrent request.
             _CURRENT_EVENT_CALLBACK.reset(callback_token)
+
 
     return trace
