@@ -1,14 +1,218 @@
+import asyncio
+import contextvars
+import json
+
 from google.adk.agents import Agent
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
-from google.genai import types
 from google.adk.agents.run_config import RunConfig
-from rag_tools import search_docs
-from db_tools import get_inventory,get_product_data,get_supplier_data,get_forecast,get_sales_history,get_open_pos,save_agent_trace
-from planning_tools import calculate_projected_inventory,calculate_forward_average_demand,calculate_projected_wos,calculate_target_inventory,calculate_gap_to_target,detect_stockout_exposure,adjust_order_quantity,check_replenishment_arrival_risk,calculate_replenishment_requirement, select_replenishment_planning_point
+from google.adk.models.google_llm import Gemini
+from google.adk.models.llm_request import LlmRequest
+from google.adk.models.llm_response import LlmResponse
+from google.genai import types
 
-import json
-from pathlib import Path
+from rag_tools import search_docs
+from db_tools import (
+    get_inventory,
+    get_product_data,
+    get_supplier_data,
+    get_forecast,
+    get_sales_history,
+    get_open_pos,
+    save_agent_trace,
+)
+from planning_tools import (
+    calculate_projected_inventory,
+    calculate_forward_average_demand,
+    calculate_projected_wos,
+    calculate_target_inventory,
+    calculate_gap_to_target,
+    detect_stockout_exposure,
+    adjust_order_quantity,
+    check_replenishment_arrival_risk,
+    calculate_replenishment_requirement,
+    select_replenishment_planning_point,
+)
+
+
+# --------------------------------------------------
+# MODEL RESILIENCE CONFIGURATION
+# --------------------------------------------------
+#
+# Normal flow:
+#   1. Use PRIMARY_MODEL.
+#   2. If Gemini returns a temporary 503/429-style error,
+#      retry the SAME model twice with exponential backoff.
+#   3. If the primary model is still unavailable,
+#      make the SAME model turn with FALLBACK_MODEL.
+#
+# This happens at the model-call layer, so the whole ADK agent run
+# does NOT restart from the beginning when one Gemini turn fails.
+# --------------------------------------------------
+
+PRIMARY_MODEL = "gemini-3.6-flash"
+FALLBACK_MODEL = "gemini-2.5-flash"
+
+MAX_PRIMARY_RETRIES = 2
+RETRY_DELAYS_SECONDS = (2, 4)
+
+# This lets the resilient model publish retry/fallback events into the
+# current request's existing SSE event_callback without using global
+# mutable request state.
+_CURRENT_EVENT_CALLBACK = contextvars.ContextVar(
+    "supplypilot_event_callback",
+    default=None,)
+
+
+def _is_transient_model_error(exc: Exception) -> bool:
+    """
+    Return True only for errors that are reasonable to retry.
+
+    Current retryable cases:
+    - 503 / UNAVAILABLE: provider temporarily overloaded/unavailable
+    - 429 / RESOURCE_EXHAUSTED: temporary capacity/rate-limit pressure
+
+    Programming errors, authentication errors, invalid requests, bad tool
+    schemas, etc. are NOT retried.
+    """
+    error_text = str(exc).upper()
+
+    transient_markers = (
+        "503",
+        "UNAVAILABLE",
+        "429",
+        "RESOURCE_EXHAUSTED",
+    )
+
+    return any(marker in error_text for marker in transient_markers)
+
+
+async def _emit_model_resilience_event(event: dict) -> None:
+    """
+    Send retry/fallback information to the existing streaming callback.
+
+    If run_agent() was called without an event_callback, this simply does
+    nothing.
+    """
+    callback = _CURRENT_EVENT_CALLBACK.get()
+
+    if callback:
+        await callback(event)
+
+
+class ResilientGemini(Gemini):
+    """
+    Gemini model wrapper that adds retry + fallback behavior per LLM turn.
+
+    Important:
+    This wraps Gemini at generate_content_async(), which is the individual
+    model-call layer used by ADK.
+
+    Therefore, if Gemini fails on (for example) LLM call #5, SupplyPilot
+    retries that model turn rather than restarting the complete agent run
+    and repeating calls #1-#4 and their tools.
+    """
+
+    async def generate_content_async(
+        self,
+        llm_request: LlmRequest,
+        stream: bool = False,
+    ):
+        original_request_model = llm_request.model
+
+        try:
+            # ------------------------------------------
+            # PRIMARY MODEL: initial call + 2 retries
+            # ------------------------------------------
+            for attempt_index in range(MAX_PRIMARY_RETRIES + 1):
+                llm_request.model = PRIMARY_MODEL
+                yielded_response = False
+
+                try:
+                    async for response in super().generate_content_async(
+                        llm_request,
+                        stream=stream,
+                    ):
+                        yielded_response = True
+                        yield response
+
+                    # Successful model turn.
+                    return
+
+                except Exception as exc:
+                    # If part of a streaming model response has already been
+                    # emitted, retrying the same turn could duplicate output.
+                    # In that rare case, fail normally rather than replay it.
+                    if yielded_response:
+                        raise
+
+                    if not _is_transient_model_error(exc):
+                        raise
+
+                    # There are still primary-model retries available.
+                    if attempt_index < MAX_PRIMARY_RETRIES:
+                        retry_number = attempt_index + 1
+                        delay_seconds = RETRY_DELAYS_SECONDS[attempt_index]
+
+                        print(
+                            "\nMODEL RETRY"
+                            f"\nModel: {PRIMARY_MODEL}"
+                            f"\nRetry: {retry_number}/{MAX_PRIMARY_RETRIES}"
+                            f"\nWait: {delay_seconds}s"
+                            f"\nReason: {exc}"
+                        )
+
+                        await _emit_model_resilience_event(
+                            {
+                                "type": "model_retry",
+                                "model": PRIMARY_MODEL,
+                                "retry": retry_number,
+                                "max_retries": MAX_PRIMARY_RETRIES,
+                                "wait_seconds": delay_seconds,
+                                "reason": str(exc),
+                            }
+                        )
+
+                        await asyncio.sleep(delay_seconds)
+                        continue
+
+                    # No primary retries remain. Exit the primary loop and
+                    # move to the fallback model.
+                    print(
+                        "\nPRIMARY MODEL UNAVAILABLE"
+                        f"\nModel: {PRIMARY_MODEL}"
+                        f"\nReason: {exc}"
+                    )
+
+            # ------------------------------------------
+            # FALLBACK MODEL: one attempt
+            # ------------------------------------------
+            print(
+                "\nMODEL FALLBACK"
+                f"\nFrom: {PRIMARY_MODEL}"
+                f"\nTo: {FALLBACK_MODEL}"
+            )
+
+            await _emit_model_resilience_event(
+                {
+                    "type": "model_fallback",
+                    "from_model": PRIMARY_MODEL,
+                    "to_model": FALLBACK_MODEL,
+                }
+            )
+
+            llm_request.model = FALLBACK_MODEL
+
+            async for response in super().generate_content_async(
+                llm_request,
+                stream=stream,
+            ):
+                yield response
+
+        finally:
+            # Keep the incoming request object clean after this turn.
+            llm_request.model = original_request_model
+
 
 # --------------------------------------------------
 # ROOT AGENT
@@ -16,7 +220,7 @@ from pathlib import Path
 
 root_agent = Agent(
     name="supplypilot_agent",
-    model="gemini-3.6-flash",
+    model=ResilientGemini(model=PRIMARY_MODEL),
     description=(
         "Human-friendly supply planning copilot for NovaTech Retail. "
         "It interprets natural, sometimes incomplete planning questions, uses the minimum necessary tools, "
@@ -45,7 +249,6 @@ TOOL USE:
 - get_sales_history: historical sales.
 - get_open_pos: outstanding incoming supply and expected arrivals.
 - search_docs: NovaTech policies, rules, and thresholds.
-
 
 REPLENISHMENT PLANNING POINT:
 - When evaluating a replenishment requirement, first retrieve the supplier lead time using get_supplier_data.
@@ -103,109 +306,138 @@ DONE:
     tools=[
         # RAG
         search_docs,
+
         # DB
-        get_inventory,get_product_data,get_supplier_data,get_forecast,get_sales_history,get_open_pos,
+        get_inventory,
+        get_product_data,
+        get_supplier_data,
+        get_forecast,
+        get_sales_history,
+        get_open_pos,
+
         # Deterministic planning
-        calculate_projected_inventory,calculate_forward_average_demand,calculate_projected_wos,
-        calculate_target_inventory,calculate_gap_to_target,calculate_replenishment_requirement,
-        adjust_order_quantity,detect_stockout_exposure,check_replenishment_arrival_risk,select_replenishment_planning_point
+        calculate_projected_inventory,
+        calculate_forward_average_demand,
+        calculate_projected_wos,
+        calculate_target_inventory,
+        calculate_gap_to_target,
+        calculate_replenishment_requirement,
+        adjust_order_quantity,
+        detect_stockout_exposure,
+        check_replenishment_arrival_risk,
+        select_replenishment_planning_point,
     ],
 )
+
 
 # --------------------------------------------------
 # SUPPLYPILOT ARCHITECTURE
 # --------------------------------------------------
+# **Evals & Memory/SKIlls
+
 
 # SupplyPilot Agent
+#     │
+#     ├── RESILIENT GEMINI MODEL
+#     │     │
+#     │     ├── Primary: gemini-3.6-flash
+#     │     ├── transient failure → retry after 2s
+#     │     ├── transient failure → retry after 4s
+#     │     └── still unavailable → gemini-2.5-flash fallback
 #     │
 #     ├── RETRIEVAL / DATA TOOLS
 #     │     │
 #     │     ├── RAG TOOL
-#     │     │     │
 #     │     │     └── search_docs
 #     │     │           → Pinecone / NovaTech policies
 #     │     │
 #     │     └── DATABASE TOOLS — PostgreSQL
-#     │           │
 #     │           ├── get_inventory
 #     │           │     → current stock
-#     │           │
 #     │           ├── get_product_data
 #     │           │     → product + MOQ + order multiple + supplier
-#     │           │
 #     │           ├── get_supplier_data
 #     │           │     → lead time + supplier details
-#     │           │
 #     │           ├── get_forecast
 #     │           │     → future weekly demand
-#     │           │
 #     │           ├── get_sales_history
 #     │           │     → historical sales
-#     │           │
 #     │           └── get_open_pos
 #     │                 → open incoming supply + expected arrivals
 #     │
 #     └── DETERMINISTIC PLANNING TOOLS — Python
-#           │
 #           ├── calculate_projected_inventory
 #           │     → projected inventory by week
 #           │     → unmet demand + carried unmet demand
-#           │
 #           ├── calculate_forward_average_demand
 #           │     → rolling forward average weekly demand
-#           │
 #           ├── calculate_projected_wos
 #           │     → projected Weeks of Supply (WOS)
-#           │
 #           ├── calculate_target_inventory
 #           │     → target WOS converted into inventory units
-#           │
 #           ├── calculate_gap_to_target
 #           │     → inventory above / below target
-#           │
 #           ├── calculate_replenishment_requirement
 #           │     → below-target gap converted into required quantity
-#           │
 #           ├── adjust_order_quantity
 #           │     → required quantity adjusted for MOQ + order multiple
-#           │
 #           ├── detect_stockout_exposure
 #           │     → first stockout week + unmet-demand exposure
-#           │
-#           └── check_replenishment_arrival_risk
-#                 → compares stockout timing vs standard lead-time arrival
+#           ├── check_replenishment_arrival_risk
+#           │     → compares stockout timing vs standard lead-time arrival
+#           └── select_replenishment_planning_point
+#                 → authoritative replenishment planning point
+#
 # --------------------------------------------------
 # RUNNER
+# --------------------------------------------------
+#
 # event_callback is optional:
-# - normal POST /agent → event_callback=None
-# - streaming UI → receives live llm_call / act / observe / final events
+# - normal run → event_callback=None
+# - POST /agent streaming UI → receives live events
+#
+# Existing events:
+# - llm_call
+# - act
+# - observe
+# - final
+# - error
+#
+# New resilience events:
+# - model_retry
+# - model_fallback
+#
 # --------------------------------------------------
 
-async def run_agent(message: str, event_callback=None):
 
-    # Create the ADK session and runner
+async def run_agent(message: str, event_callback=None):
+    # Make the current SSE callback available to ResilientGemini for this
+    # request only.
+    callback_token = _CURRENT_EVENT_CALLBACK.set(event_callback)
+
+    # Create the ADK session and runner.
     session_service = InMemorySessionService()
 
     runner = Runner(
         agent=root_agent,
         app_name="supplypilot",
-        session_service=session_service
+        session_service=session_service,
     )
 
     session = await session_service.create_session(
         app_name="supplypilot",
-        user_id="test_user"
+        user_id="test_user",
     )
 
-    # Convert the user message into ADK content
+    # Convert the user message into ADK content.
     content = types.Content(
         role="user",
-        parts=[types.Part(text=message)]
+        parts=[types.Part(text=message)],
     )
 
     run_config = RunConfig(max_llm_calls=20)
 
-    # Initialize trace data before the agent starts
+    # Initialize trace data before the agent starts.
     final_response = None
     llm_calls = 0
     tool_calls = []
@@ -218,20 +450,18 @@ async def run_agent(message: str, event_callback=None):
         "assistant_output": None,
         "llm_calls": 0,
         "status": "running",
-        "error_message": None
+        "error_message": None,
     }
 
     try:
-
-        # Run the agent and process its event stream
+        # Run the agent and process its event stream.
         async for event in runner.run_async(
             user_id="test_user",
             session_id=session.id,
             new_message=content,
-            run_config=run_config
+            run_config=run_config,
         ):
-
-            # Track each LLM call
+            # Track each successful ADK LLM response event.
             if getattr(event, "usage_metadata", None):
                 llm_calls += 1
                 trace["llm_calls"] = llm_calls
@@ -240,17 +470,18 @@ async def run_agent(message: str, event_callback=None):
                 print("Usage:", event.usage_metadata)
 
                 if event_callback:
-                    await event_callback({
-                        "type": "llm_call",
-                        "number": llm_calls
-                    })
+                    await event_callback(
+                        {
+                            "type": "llm_call",
+                            "number": llm_calls,
+                        }
+                    )
 
             if not event.content or not event.content.parts:
                 continue
 
             for part in event.content.parts:
-
-                # ACT: record the tool selected by the agent
+                # ACT: record the tool selected by the agent.
                 if getattr(part, "function_call", None):
                     tool_name = part.function_call.name
                     arguments = part.function_call.args
@@ -259,20 +490,24 @@ async def run_agent(message: str, event_callback=None):
                     print(f"Tool: {tool_name}")
                     print(f"Arguments: {arguments}")
 
-                    tool_calls.append({
-                        "type": "act",
-                        "tool": tool_name,
-                        "arguments": arguments
-                    })
-
-                    if event_callback:
-                        await event_callback({
+                    tool_calls.append(
+                        {
                             "type": "act",
                             "tool": tool_name,
-                            "arguments": arguments
-                        })
+                            "arguments": arguments,
+                        }
+                    )
 
-                # OBSERVE: record the result returned by the tool
+                    if event_callback:
+                        await event_callback(
+                            {
+                                "type": "act",
+                                "tool": tool_name,
+                                "arguments": arguments,
+                            }
+                        )
+
+                # OBSERVE: record the result returned by the tool.
                 elif getattr(part, "function_response", None):
                     tool_name = part.function_response.name
                     result = part.function_response.response
@@ -282,18 +517,22 @@ async def run_agent(message: str, event_callback=None):
                     print(f"Tool: {tool_name}")
                     print(f"Result: {result}")
 
-                    tool_calls.append({
-                        "type": "observe",
-                        "tool": tool_name,
-                        "observation": result
-                    })
-
-                    # Store RAG evidence separately for grounding evaluation
-                    if tool_name == "search_docs":
-                        retrieved_context.append({
+                    tool_calls.append(
+                        {
+                            "type": "observe",
                             "tool": tool_name,
-                            "context": result
-                        })
+                            "observation": result,
+                        }
+                    )
+
+                    # Store RAG evidence separately for grounding evaluation.
+                    if tool_name == "search_docs":
+                        retrieved_context.append(
+                            {
+                                "tool": tool_name,
+                                "context": result,
+                            }
+                        )
 
                     if event_callback:
                         display_result = (
@@ -302,13 +541,15 @@ async def run_agent(message: str, event_callback=None):
                             else result_text
                         )
 
-                        await event_callback({
-                            "type": "observe",
-                            "tool": tool_name,
-                            "observation": display_result
-                        })
+                        await event_callback(
+                            {
+                                "type": "observe",
+                                "tool": tool_name,
+                                "observation": display_result,
+                            }
+                        )
 
-                # FINAL: capture the agent's final answer
+                # FINAL: capture the agent's final answer.
                 elif getattr(part, "text", None) and event.is_final_response():
                     final_response = part.text
                     trace["assistant_output"] = final_response
@@ -317,15 +558,16 @@ async def run_agent(message: str, event_callback=None):
                     print(final_response)
 
                     if event_callback:
-                        await event_callback({
-                            "type": "final",
-                            "answer": final_response
-                        })
+                        await event_callback(
+                            {
+                                "type": "final",
+                                "answer": final_response,
+                            }
+                        )
 
-        # A run is successful only if a final response was actually produced
+        # A run is successful only if a final response was actually produced.
         if final_response is not None and str(final_response).strip():
             trace["status"] = "success"
-
         else:
             trace["status"] = "failed"
             trace["error_message"] = (
@@ -336,14 +578,16 @@ async def run_agent(message: str, event_callback=None):
             print(trace["error_message"])
 
             if event_callback:
-                await event_callback({
-                    "type": "error",
-                    "error": trace["error_message"]
-                })
+                await event_callback(
+                    {
+                        "type": "error",
+                        "error": trace["error_message"],
+                    }
+                )
 
     except Exception as e:
-
-        # Preserve failed runs, including max-LLM-call failures
+        # Preserve failed runs, including max-LLM-call failures and a
+        # fallback-model failure.
         trace["status"] = "failed"
         trace["error_message"] = str(e)
         trace["assistant_output"] = final_response
@@ -353,28 +597,35 @@ async def run_agent(message: str, event_callback=None):
         print(str(e))
 
         if event_callback:
-            await event_callback({
-                "type": "error",
-                "error": str(e)
-            })
+            await event_callback(
+                {
+                    "type": "error",
+                    "error": str(e),
+                }
+            )
 
     finally:
+        try:
+            # Always save the trace, whether the run succeeds or fails.
+            trace["llm_calls"] = llm_calls
 
-        # Always save the trace, whether the run succeeds or fails
-        trace["llm_calls"] = llm_calls
+            print(f"\nTOTAL GEMINI CALLS: {llm_calls}")
 
-        print(f"\nTOTAL GEMINI CALLS: {llm_calls}")
-
-        print("\nTRACE")
-        print(
-            json.dumps(
-                trace,
-                indent=2,
-                ensure_ascii=False,
-                default=str
+            print("\nTRACE")
+            print(
+                json.dumps(
+                    trace,
+                    indent=2,
+                    ensure_ascii=False,
+                    default=str,
+                )
             )
-        )
 
-        save_agent_trace(trace)
+            save_agent_trace(trace)
+
+        finally:
+            # Prevent this request's callback from leaking into another
+            # concurrent request.
+            _CURRENT_EVENT_CALLBACK.reset(callback_token)
 
     return trace
