@@ -10,6 +10,7 @@ from google.adk.models.google_llm import Gemini
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 from google.genai import types
+from datetime import date
 
 from rag_tools import search_docs
 from db_tools import (
@@ -502,7 +503,7 @@ def build_recommendation_memory(trace: dict) -> dict:
         "decision": decision,
         "recommended_order_qty": recommended_qty,
 
-        "decision_date": None,
+       "decision_date": date.today().isoformat(),
         "current_week": "CW",
 
         "planning_week": planning_point["planning_week"],
@@ -776,17 +777,23 @@ async def run_agent(message: str, event_callback=None):
 
             trace_id = save_agent_trace(trace)
 
-            if recommendation_memory_write_gate(trace):
-                memory = build_recommendation_memory(trace)
+            try:
+                if recommendation_memory_write_gate(trace):
+                    memory = build_recommendation_memory(trace)
 
-                memory_id = save_recommendation_memory(
-                    memory=memory,
-                    trace_id=trace_id,
-                )
+                    memory_id = save_recommendation_memory(
+                        memory=memory,
+                        trace_id=trace_id,
+                    )
 
-                print(f"\nRECOMMENDATION MEMORY SAVED: {memory_id}")
-            else:
-                print("\nRECOMMENDATION MEMORY NOT SAVED")
+                    print(f"\nRECOMMENDATION MEMORY SAVED: {memory_id}")
+                else:
+                    print("\nRECOMMENDATION MEMORY NOT SAVED")
+
+            except Exception as memory_error:
+                print("\nRECOMMENDATION MEMORY SAVE FAILED")
+                print(str(memory_error))
+
 
 
         finally:
