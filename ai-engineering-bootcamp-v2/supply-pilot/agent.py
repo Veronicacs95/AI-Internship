@@ -457,155 +457,146 @@ def recommendation_memory_write_gate(trace: dict) -> bool:
 
     tool_calls = trace.get("tool_calls", [])
 
-    observed_tools = {
-        item.get("tool")
-        for item in tool_calls
-        if item.get("type") == "observe"
+    workflow_observation = next(
+        (
+            item.get("observation")
+            for item in tool_calls
+            if item.get("type") == "observe"
+            and item.get("tool") == "run_replenishment_workflow"
+        ),
+        None,
+    )
+
+    if not workflow_observation:
+        return False
+
+    required_fields = {
+        "sku",
+        "decision",
+        "planning_week",
+        "projected_inventory",
+        "forward_average_demand",
+        "projected_wos",
+        "target_wos",
+        "target_inventory",
+        "gap_to_target",
+        "initial_replenishment_requirement",
+        "recommended_order_qty",
     }
 
-    required_tools = {
-        "get_product_data",
-        "get_inventory",
-        "get_supplier_data",
-        "get_forecast",
-        "get_open_pos",
-        "calculate_projected_inventory",
-        "select_replenishment_planning_point",
-        "calculate_forward_average_demand",
-        "calculate_projected_wos",
-        "calculate_target_inventory",
-        "calculate_gap_to_target",
-        "calculate_replenishment_requirement",
-        "adjust_order_quantity",
-        "detect_stockout_exposure",
-        "check_replenishment_arrival_risk",
-    }
-
-    if not required_tools.issubset(observed_tools):
+    if not required_fields.issubset(workflow_observation.keys()):
         return False
 
     return True
 
-
 def build_recommendation_memory(trace: dict) -> dict:
     """
-    Build a compact episodic replenishment memory from trusted
-    deterministic tool observations.
+    Build compact episodic replenishment memory from the validated
+    high-level replenishment workflow result.
     """
 
-    observations = {
-        item["tool"]: item["observation"]
+    workflow = next(
+        item["observation"]
         for item in trace.get("tool_calls", [])
         if item.get("type") == "observe"
-    }
-
-    product = observations["get_product_data"]
-    inventory = observations["get_inventory"]
-    planning_point = observations["select_replenishment_planning_point"]
-    forward_demand = observations["calculate_forward_average_demand"]
-    projected_wos = observations["calculate_projected_wos"]
-    target_inventory = observations["calculate_target_inventory"]
-    gap = observations["calculate_gap_to_target"]
-    requirement = observations["calculate_replenishment_requirement"]
-    adjusted_order = observations["adjust_order_quantity"]
-    stockout = observations["detect_stockout_exposure"]
-    arrival = observations["check_replenishment_arrival_risk"]
-
-    recommended_qty = adjusted_order.get("recommended_order_qty", 0)
-
-    decision = (
-        "INCREASE"
-        if recommended_qty > 0
-        else "MAINTAIN"
+        and item.get("tool") == "run_replenishment_workflow"
     )
 
     policy_ids = []
 
-    for item in trace.get("retrieved_context", []):
-        context = item.get("context", {})
+    policy = workflow.get("policy", {})
 
-        for result in context.get("results", []):
-            document_id = result.get("document_id")
+    for result in policy.get("results", []):
+        document_id = result.get("document_id")
 
-            if document_id and document_id not in policy_ids:
-                policy_ids.append(document_id)
+        if document_id and document_id not in policy_ids:
+            policy_ids.append(document_id)
 
     return {
-        "sku": product["sku"],
-        "decision": decision,
-        "recommended_order_qty": recommended_qty,
+        "sku": workflow["sku"],
+        "decision": workflow["decision"],
+        "recommended_order_qty":
+            workflow.get("recommended_order_qty", 0),
 
-       "decision_date": date.today().isoformat(),
-        "current_week": "CW",
+        "decision_date":
+            date.today().isoformat(),
 
-        "planning_week": planning_point["planning_week"],
-        "planning_week_start": planning_point.get("week_start"),
+        "current_week":
+            "CW",
 
-        "available_inventory_cw": inventory.get("available_inventory"),
+        "planning_week":
+            workflow["planning_week"],
+
+        "planning_week_start":
+            workflow.get("planning_week_start"),
+
+        "available_inventory_cw":
+            workflow.get("current_inventory"),
+
         "projected_inventory_planning_week":
-            planning_point.get("projected_inventory"),
+            workflow.get("projected_inventory"),
 
         "forward_average_demand":
-            forward_demand.get("average_weekly_demand"),
+            workflow.get("forward_average_demand"),
 
         "projected_wos":
-            projected_wos.get("projected_wos"),
+            workflow.get("projected_wos"),
 
         "target_wos":
-            target_inventory.get("target_wos"),
+            workflow.get("target_wos"),
 
         "target_inventory":
-            target_inventory.get("target_inventory"),
+            workflow.get("target_inventory"),
 
         "gap_to_target":
-            gap.get("gap_units"),
+            workflow.get("gap_to_target"),
 
         "initial_replenishment_requirement":
-            requirement.get("required_qty"),
+            workflow.get("initial_replenishment_requirement"),
 
         "moq":
-            product.get("moq"),
+            workflow.get("moq"),
 
         "order_multiple":
-            product.get("order_multiple"),
+            workflow.get("order_multiple"),
 
         "stockout_exposure":
-            stockout.get("stockout_exposure", False),
+            workflow.get("stockout_exposure", False),
 
         "first_stockout_week":
-            stockout.get("first_stockout_week"),
+            workflow.get("first_stockout_week"),
 
         "first_stockout_date":
-            stockout.get("first_stockout_date"),
+            workflow.get("first_stockout_date"),
 
         "first_stockout_unmet_demand":
-            stockout.get("first_stockout_unmet_demand"),
+            workflow.get("first_stockout_unmet_demand"),
 
         "standard_arrival_week":
-            arrival.get("expected_arrival_week"),
+            workflow.get("standard_arrival_week"),
 
         "arrival_risk":
-            arrival.get("arrival_risk", False),
+            workflow.get("arrival_risk", False),
 
         "stockout_gap_weeks":
-            arrival.get("stockout_gap_weeks"),
+            workflow.get("stockout_gap_weeks", 0),
 
         "policy_ids":
             policy_ids,
 
         "reason_summary":
             (
-                f"At {planning_point['planning_week']}, projected inventory "
-                f"is {planning_point.get('projected_inventory')} units versus "
-                f"a target of {target_inventory.get('target_inventory')} units. "
+                f"At {workflow['planning_week']}, projected inventory is "
+                f"{workflow.get('projected_inventory')} units versus a target of "
+                f"{workflow.get('target_inventory')} units. "
                 f"Initial replenishment requirement is "
-                f"{requirement.get('required_qty')} units and the valid "
-                f"recommended quantity after ordering constraints is "
-                f"{recommended_qty} units."
+                f"{workflow.get('initial_replenishment_requirement')} units and "
+                f"the valid recommended quantity after ordering constraints is "
+                f"{workflow.get('recommended_order_qty', 0)} units."
             ),
     }
 
-
+    
 
 async def run_agent(message: str, event_callback=None):
     # Make the current SSE callback available to ResilientGemini for this
