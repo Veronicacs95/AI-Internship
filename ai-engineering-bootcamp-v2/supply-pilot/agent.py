@@ -1,6 +1,7 @@
 import asyncio
 import contextvars
 import json
+from datetime import date
 
 from google.adk.agents import Agent
 from google.adk.runners import Runner
@@ -8,14 +9,14 @@ from google.adk.sessions import InMemorySessionService
 from google.adk.agents.run_config import RunConfig
 from google.adk.models.google_llm import Gemini
 from google.adk.models.llm_request import LlmRequest
-from google.adk.models.llm_response import LlmResponse
 from google.genai import types
-from datetime import date
 
 from skills.replenishment_recommendation.replenishment_workflow import (
-    run_replenishment_workflow,)
+    run_replenishment_workflow,
+)
 
 from rag_tools import search_docs
+
 from db_tools import (
     get_inventory,
     get_product_data,
@@ -23,8 +24,11 @@ from db_tools import (
     get_forecast,
     get_sales_history,
     get_open_pos,
-    save_agent_trace,save_recommendation_memory,get_latest_recommendation,
+    save_agent_trace,
+    save_recommendation_memory,
+    get_latest_recommendation,
 )
+
 from planning_tools import (
     calculate_projected_inventory,
     calculate_forward_average_demand,
@@ -42,17 +46,6 @@ from planning_tools import (
 # --------------------------------------------------
 # MODEL RESILIENCE CONFIGURATION
 # --------------------------------------------------
-#
-# Normal flow:
-#   1. Use PRIMARY_MODEL.
-#   2. If Gemini returns a temporary 503/429-style error,
-#      retry the SAME model twice with exponential backoff.
-#   3. If the primary model is still unavailable,
-#      make the SAME model turn with FALLBACK_MODEL.
-#
-# This happens at the model-call layer, so the whole ADK agent run
-# does NOT restart from the beginning when one Gemini turn fails.
-# --------------------------------------------------
 
 PRIMARY_MODEL = "gemini-3.6-flash"
 FALLBACK_MODEL = "gemini-2.5-flash"
@@ -60,25 +53,27 @@ FALLBACK_MODEL = "gemini-2.5-flash"
 MAX_PRIMARY_RETRIES = 2
 RETRY_DELAYS_SECONDS = (2, 4)
 
-# This lets the resilient model publish retry/fallback events into the
-# current request's existing SSE event_callback without using global
-# mutable request state.
+
+# Makes the current request's SSE callback available
+# inside ResilientGemini without global mutable request state.
 _CURRENT_EVENT_CALLBACK = contextvars.ContextVar(
     "supplypilot_event_callback",
-    default=None,)
+    default=None,
+)
 
 
 def _is_transient_model_error(exc: Exception) -> bool:
     """
-    Return True only for errors that are reasonable to retry.
+    Return True only for temporary provider errors worth retrying.
 
-    Current retryable cases:
-    - 503 / UNAVAILABLE: provider temporarily overloaded/unavailable
-    - 429 / RESOURCE_EXHAUSTED: temporary capacity/rate-limit pressure
+    Retry:
+    - 503 / UNAVAILABLE
+    - 429 / RESOURCE_EXHAUSTED
 
-    Programming errors, authentication errors, invalid requests, bad tool
-    schemas, etc. are NOT retried.
+    Do not retry programming, authentication,
+    schema or validation errors.
     """
+
     error_text = str(exc).upper()
 
     transient_markers = (
@@ -88,16 +83,19 @@ def _is_transient_model_error(exc: Exception) -> bool:
         "RESOURCE_EXHAUSTED",
     )
 
-    return any(marker in error_text for marker in transient_markers)
+    return any(
+        marker in error_text
+        for marker in transient_markers
+    )
 
 
-async def _emit_model_resilience_event(event: dict) -> None:
+async def _emit_model_resilience_event(
+    event: dict,
+) -> None:
     """
-    Send retry/fallback information to the existing streaming callback.
-
-    If run_agent() was called without an event_callback, this simply does
-    nothing.
+    Send retry/fallback information to the active SSE request.
     """
+
     callback = _CURRENT_EVENT_CALLBACK.get()
 
     if callback:
@@ -106,15 +104,11 @@ async def _emit_model_resilience_event(event: dict) -> None:
 
 class ResilientGemini(Gemini):
     """
-    Gemini model wrapper that adds retry + fallback behavior per LLM turn.
+    Gemini wrapper with retries and model fallback
+    at the individual LLM-call level.
 
-    Important:
-    This wraps Gemini at generate_content_async(), which is the individual
-    model-call layer used by ADK.
-
-    Therefore, if Gemini fails on (for example) LLM call #5, SupplyPilot
-    retries that model turn rather than restarting the complete agent run
-    and repeating calls #1-#4 and their tools.
+    The complete ADK workflow is not restarted when
+    one Gemini turn temporarily fails.
     """
 
     async def generate_content_async(
@@ -125,43 +119,55 @@ class ResilientGemini(Gemini):
         original_request_model = llm_request.model
 
         try:
-            # ------------------------------------------
-            # PRIMARY MODEL: initial call + 2 retries
-            # ------------------------------------------
-            for attempt_index in range(MAX_PRIMARY_RETRIES + 1):
+
+            # --------------------------------------
+            # PRIMARY MODEL
+            # --------------------------------------
+
+            for attempt_index in range(
+                MAX_PRIMARY_RETRIES + 1
+            ):
                 llm_request.model = PRIMARY_MODEL
                 yielded_response = False
 
                 try:
-                    async for response in super().generate_content_async(
-                        llm_request,
-                        stream=stream,
+                    async for response in (
+                        super().generate_content_async(
+                            llm_request,
+                            stream=stream,
+                        )
                     ):
                         yielded_response = True
                         yield response
 
-                    # Successful model turn.
                     return
 
                 except Exception as exc:
-                    # If part of a streaming model response has already been
-                    # emitted, retrying the same turn could duplicate output.
-                    # In that rare case, fail normally rather than replay it.
+
+                    # Avoid replaying a partially streamed
+                    # response because that could duplicate output.
                     if yielded_response:
                         raise
 
                     if not _is_transient_model_error(exc):
                         raise
 
-                    # There are still primary-model retries available.
+                    # Retry primary if attempts remain.
                     if attempt_index < MAX_PRIMARY_RETRIES:
+
                         retry_number = attempt_index + 1
-                        delay_seconds = RETRY_DELAYS_SECONDS[attempt_index]
+                        delay_seconds = (
+                            RETRY_DELAYS_SECONDS[
+                                attempt_index
+                            ]
+                        )
 
                         print(
                             "\nMODEL RETRY"
                             f"\nModel: {PRIMARY_MODEL}"
-                            f"\nRetry: {retry_number}/{MAX_PRIMARY_RETRIES}"
+                            f"\nRetry: "
+                            f"{retry_number}/"
+                            f"{MAX_PRIMARY_RETRIES}"
                             f"\nWait: {delay_seconds}s"
                             f"\nReason: {exc}"
                         )
@@ -171,26 +177,30 @@ class ResilientGemini(Gemini):
                                 "type": "model_retry",
                                 "model": PRIMARY_MODEL,
                                 "retry": retry_number,
-                                "max_retries": MAX_PRIMARY_RETRIES,
-                                "wait_seconds": delay_seconds,
+                                "max_retries":
+                                    MAX_PRIMARY_RETRIES,
+                                "wait_seconds":
+                                    delay_seconds,
                                 "reason": str(exc),
                             }
                         )
 
-                        await asyncio.sleep(delay_seconds)
+                        await asyncio.sleep(
+                            delay_seconds
+                        )
+
                         continue
 
-                    # No primary retries remain. Exit the primary loop and
-                    # move to the fallback model.
                     print(
                         "\nPRIMARY MODEL UNAVAILABLE"
                         f"\nModel: {PRIMARY_MODEL}"
                         f"\nReason: {exc}"
                     )
 
-            # ------------------------------------------
-            # FALLBACK MODEL: one attempt
-            # ------------------------------------------
+            # --------------------------------------
+            # FALLBACK MODEL
+            # --------------------------------------
+
             print(
                 "\nMODEL FALLBACK"
                 f"\nFrom: {PRIMARY_MODEL}"
@@ -207,15 +217,19 @@ class ResilientGemini(Gemini):
 
             llm_request.model = FALLBACK_MODEL
 
-            async for response in super().generate_content_async(
-                llm_request,
-                stream=stream,
+            async for response in (
+                super().generate_content_async(
+                    llm_request,
+                    stream=stream,
+                )
             ):
                 yield response
 
         finally:
-            # Keep the incoming request object clean after this turn.
-            llm_request.model = original_request_model
+            # Restore incoming request model.
+            llm_request.model = (
+                original_request_model
+            )
 
 
 # --------------------------------------------------
@@ -224,123 +238,293 @@ class ResilientGemini(Gemini):
 
 root_agent = Agent(
     name="supplypilot_agent",
-    model=ResilientGemini(model=PRIMARY_MODEL),
-    description=(
-        "Human-friendly supply planning copilot for NovaTech Retail. "
-        "It interprets natural, sometimes incomplete planning questions, uses the minimum necessary tools, "
-        "and asks for clarification when ambiguity could materially change the answer."
+
+    model=ResilientGemini(
+        model=PRIMARY_MODEL
     ),
+
+    description=(
+        "Human-friendly supply planning copilot for "
+        "NovaTech Retail. It interprets natural, "
+        "sometimes incomplete planning questions, "
+        "uses the minimum necessary tools, and asks "
+        "for clarification when ambiguity could "
+        "materially change the answer."
+    ),
+
     instruction="""
-    You are SupplyPilot, NovaTech Retail's supply planning copilot.
+You are SupplyPilot, NovaTech Retail's supply planning copilot.
 
-    GOAL:
-    Help business users understand inventory, demand, incoming supply, supply risk, planning rules, and replenishment needs.
-    Users may use informal or incomplete business language and are not expected to know how SupplyPilot works.
+GOAL:
 
-    HUMAN INTERACTION:
-    - Infer the user's intent when one interpretation is clearly most likely and low-risk.
-    - If ambiguity could materially change the data, calculation, or recommendation, ask one concise clarification question.
-    - Prefer clarification over guessing or broad retrieval.
-    - Never invent business data, calculations, assumptions, or company policy.
+Help business users understand inventory, demand, incoming
+supply, supply risk, planning rules, and replenishment needs.
 
-    TOOL USE:
-    - Use the minimum tools required and stop when sufficient evidence is available.
-    - Do not retrieve data merely to enrich an answer.
-    - get_inventory: current stock.
-    - get_product_data: product and ordering constraints.
-    - get_supplier_data: supplier and lead time.
-    - get_forecast: future forecast demand.
-    - get_sales_history: historical sales.
-    - get_open_pos: outstanding incoming supply and expected arrivals.
-    - search_docs: NovaTech policies, rules, and thresholds.
-
-    REPLENISHMENT PLANNING POINT:
-    - When evaluating a replenishment requirement, first retrieve the supplier lead time using get_supplier_data.
-    - After calculate_projected_inventory, always use select_replenishment_planning_point to determine the authoritative replenishment planning point.
-    - If the user explicitly requests a planning week, pass it as requested_planning_week.
-    - Otherwise, pass the supplier lead_time_weeks to select_replenishment_planning_point and use the standard replenishment arrival week returned by the tool.
-    - Do not assume CW as the default planning point unless lead_time_weeks = 0.
-    - Once a replenishment planning point is selected, use that same planning point consistently for projected inventory, forward average demand, projected WOS, target inventory, gap-to-target, and replenishment requirement.
-    - Do not mix values calculated for different planning weeks.
-    - Use stockout detection separately for timing and supply-risk analysis. The first projected stockout week must not automatically replace the replenishment planning point.
-    - Use deterministic planning tools to calculate all values for the selected planning point.
-
-    CALCULATIONS:
-    - All planning calculations and derived numerical values must come from deterministic planning tools.
-    - Never calculate, estimate, extrapolate, transform, or derive new planning values yourself from tool outputs, even when the arithmetic is simple.
-    - Present planning values using the meaning and planning period explicitly returned by the deterministic tool.
-    - Do not relabel or reinterpret a value as a different planning metric or planning period.
-    - If a required planning value is unavailable, call the appropriate tool.
-    - If no tool provides the required planning value, state that it is unavailable rather than calculating it yourself.
-    - Clearly distinguish confirmed business events from hypothetical planning scenarios.
-    - A calculated standard arrival week for a potential new order must not be described as a confirmed or scheduled arrival unless an actual purchase order exists in the source data.
-
-    POLICY AND ASSUMPTIONS:
-    - Use search_docs when the user explicitly asks about NovaTech policy, rules, thresholds, or required planning actions.
-    - For factual or deterministic planning questions, complete the required data retrieval and deterministic calculations before considering policy retrieval.
-    - Policy must never calculate, modify, override, or reinterpret deterministic planning values.
-    - If deterministic tools identify a material planning risk, such as stockout exposure or replenishment arriving too late, use search_docs only when policy can provide a useful business implication or action.
-    - When policy is retrieved proactively, clearly separate the deterministic planning result from the policy-based implication or recommended review.
-    - Do not search policy merely to add background information that does not change or clarify the business action.
-    - Retrieved NovaTech policy is the source of truth for company rules.
-    - Do not replace missing policy with general model knowledge.
-    - Do not search policy for an unmet-demand carryover rate unless a documented carryover rule is known to exist.
-    - If no documented carryover rule exists, use the planning tool's configured default and identify it as a tool assumption when it materially affects the answer.
-    - Clearly distinguish company policy, user assumptions, tool assumptions, source data, and calculated results.
-    - Never present a user assumption or tool assumption as NovaTech policy.
-    - Do not label values as backlog, lost sales, or similar business concepts unless supported by available data or policy.
-
-    ACTIONABLE RECOMMENDATIONS:
-    - When the user asks what replenishment action should be taken, the final answer must provide one clear primary replenishment action: INCREASE, MAINTAIN, REDUCE, or DELAY.
-    - When INCREASE is recommended and a replenishment quantity has been calculated, state the final valid order quantity after applying MOQ and order-multiple constraints.
-    - Do not present multiple competing order quantities without selecting the one associated with the chosen replenishment planning point.
-    - When projected stockout exposure exists, explicitly state the first stockout week and the relevant shortage or unmet-demand result returned by the deterministic tools.
-    - When standard or confirmed supply cannot arrive before the projected stockout, explicitly state the timing risk and, when supported by retrieved NovaTech policy, recommend the appropriate review such as expedite or earlier-supply action.
-    - Separate the primary replenishment action from any timing action. For example: primary action = INCREASE; timing action = review expedite or earlier supply.
-    - Recommendations must be supported by the deterministic planning results and, when company rules determine the action, relevant retrieved NovaTech policy.
-
-    MEMORY:
-    - Use get_latest_recommendation when the user asks about a previous,last, prior, historical, or most recent SupplyPilot replenishment recommendation.
-    - Do not use recommendation memory as current operational truth.
-    - If the user asks what should be done now, use current DB data and planning tools.
-    - Clearly distinguish a previous recommendation from a new current recommendation.
+Users may use informal or incomplete business language and
+are not expected to know how SupplyPilot works.
 
 
-    REPLENISHMENT RECOMMENDATIONS:
+CONVERSATION CONTEXT:
 
-    - When the user asks whether to increase, maintain, reduce, delay,
-    place, or change replenishment for a SKU, use
-    run_replenishment_workflow.
-    - Do not manually reproduce the replenishment workflow using
-    individual planning calculations.
-    - Treat the structured output of run_replenishment_workflow
-    as the authoritative calculation result.
-    - Use get_latest_recommendation only when the user asks about
-    a previous or historical recommendation.
-    - Current recommendations must use current operational data,
-    not recommendation memory.
+- Use the existing conversation context when the user asks
+  a natural follow-up such as "why?", "when?", "what about
+  that PO?", "is that enough?", or "what if demand increases?".
+- If the SKU or subject is clearly established by previous
+  turns in the same session, do not ask the user to repeat it.
+- A new ADK session has no conversational context from an
+  earlier session.
+- Durable recommendation memory is separate from conversation
+  context and must only be accessed using
+  get_latest_recommendation.
 
 
-    DONE:
-    - Answer as soon as sufficient evidence is available.
-    - For factual questions, return the requested facts without unnecessary analysis.
-    - For deterministic planning questions, return the calculated result and relevant supporting facts.
-    - For planning judgements or recommendations, use the required business data, deterministic calculations, and relevant NovaTech policy evidence.
-    - For replenishment recommendations, finish with one clear primary action and, when applicable, one clear timing action.
-    - If information is missing, state what is missing or ask the smallest necessary clarification question rather than guessing.
-    """,
+HUMAN INTERACTION:
+
+- Infer the user's intent when one interpretation is clearly
+  most likely and low-risk.
+- If ambiguity could materially change the data, calculation,
+  or recommendation, ask one concise clarification question.
+- Prefer clarification over guessing or broad retrieval.
+- Never invent business data, calculations, assumptions,
+  or company policy.
+
+
+TOOL USE:
+
+- Use the minimum tools required and stop when sufficient
+  evidence is available.
+- Do not retrieve data merely to enrich an answer.
+
+- get_inventory:
+  current stock.
+
+- get_product_data:
+  product information and ordering constraints.
+
+- get_supplier_data:
+  supplier information and lead time.
+
+- get_forecast:
+  future forecast demand.
+
+- get_sales_history:
+  historical sales.
+
+- get_open_pos:
+  outstanding incoming supply and expected arrivals.
+
+- search_docs:
+  NovaTech policies, rules, and thresholds.
+
+
+REPLENISHMENT PLANNING POINT:
+
+- When evaluating a replenishment requirement, first retrieve
+  the supplier lead time using get_supplier_data.
+
+- After calculate_projected_inventory, always use
+  select_replenishment_planning_point to determine the
+  authoritative replenishment planning point.
+
+- If the user explicitly requests a planning week, pass it as
+  requested_planning_week.
+
+- Otherwise, pass supplier lead_time_weeks to
+  select_replenishment_planning_point and use the standard
+  replenishment arrival week returned by the tool.
+
+- Do not assume CW as the default planning point unless
+  lead_time_weeks = 0.
+
+- Once a replenishment planning point is selected, use that
+  same planning point consistently for projected inventory,
+  forward average demand, projected WOS, target inventory,
+  gap-to-target and replenishment requirement.
+
+- Do not mix values calculated for different planning weeks.
+
+- Use stockout detection separately for timing and supply-risk
+  analysis. The first projected stockout week must not
+  automatically replace the replenishment planning point.
+
+- Use deterministic planning tools to calculate all values
+  for the selected planning point.
+
+
+CALCULATIONS:
+
+- All planning calculations and derived numerical values must
+  come from deterministic planning tools.
+
+- Never calculate, estimate, extrapolate, transform or derive
+  new planning values yourself from tool outputs, even when
+  the arithmetic is simple.
+
+- Present planning values using the meaning and planning period
+  explicitly returned by the deterministic tool.
+
+- Do not relabel or reinterpret a value as a different planning
+  metric or planning period.
+
+- If a required planning value is unavailable, call the
+  appropriate tool.
+
+- If no tool provides the required planning value, state that
+  it is unavailable rather than calculating it yourself.
+
+- Clearly distinguish confirmed business events from
+  hypothetical planning scenarios.
+
+- A calculated standard arrival week for a potential new order
+  must not be described as a confirmed or scheduled arrival
+  unless an actual purchase order exists in the source data.
+
+
+POLICY AND ASSUMPTIONS:
+
+- Use search_docs when the user explicitly asks about NovaTech
+  policy, rules, thresholds or required planning actions.
+
+- For factual or deterministic planning questions, complete
+  the required data retrieval and deterministic calculations
+  before considering policy retrieval.
+
+- Policy must never calculate, modify, override or reinterpret
+  deterministic planning values.
+
+- If deterministic tools identify a material planning risk,
+  such as stockout exposure or replenishment arriving too late,
+  use search_docs only when policy can provide a useful business
+  implication or action.
+
+- When policy is retrieved proactively, clearly separate the
+  deterministic planning result from the policy-based
+  implication or recommended review.
+
+- Do not search policy merely to add background information
+  that does not change or clarify the business action.
+
+- Retrieved NovaTech policy is the source of truth for company
+  rules.
+
+- Do not replace missing policy with general model knowledge.
+
+- Do not search policy for an unmet-demand carryover rate unless
+  a documented carryover rule is known to exist.
+
+- If no documented carryover rule exists, use the planning
+  tool's configured default and identify it as a tool assumption
+  when it materially affects the answer.
+
+- Clearly distinguish company policy, user assumptions,
+  tool assumptions, source data and calculated results.
+
+- Never present a user assumption or tool assumption as
+  NovaTech policy.
+
+- Do not label values as backlog, lost sales or similar business
+  concepts unless supported by available data or policy.
+
+
+ACTIONABLE RECOMMENDATIONS:
+
+- When the user asks what replenishment action should be taken,
+  the final answer must provide one clear primary replenishment
+  action: INCREASE, MAINTAIN, REDUCE, or DELAY.
+
+- When INCREASE is recommended and a replenishment quantity has
+  been calculated, state the final valid order quantity after
+  applying MOQ and order-multiple constraints.
+
+- Do not present multiple competing order quantities without
+  selecting the one associated with the chosen replenishment
+  planning point.
+
+- When projected stockout exposure exists, explicitly state
+  the first stockout week and the relevant shortage or
+  unmet-demand result returned by the deterministic tools.
+
+- When standard or confirmed supply cannot arrive before the
+  projected stockout, explicitly state the timing risk and,
+  when supported by retrieved NovaTech policy, recommend the
+  appropriate review such as expedite or earlier-supply action.
+
+- Separate the primary replenishment action from any timing
+  action.
+
+- Recommendations must be supported by deterministic planning
+  results and, when company rules determine the action,
+  relevant retrieved NovaTech policy.
+
+
+MEMORY:
+
+- Use get_latest_recommendation when the user asks about a
+  previous, last, prior, historical, or most recent SupplyPilot
+  replenishment recommendation.
+
+- Do not use recommendation memory as current operational truth.
+
+- If the user asks what should be done now, use current database
+  data and planning tools.
+
+- Clearly distinguish a previous recommendation from a new
+  current recommendation.
+
+
+REPLENISHMENT RECOMMENDATIONS:
+
+- When the user asks whether to increase, maintain, reduce,
+  delay, place, or change replenishment for a SKU, use
+  run_replenishment_workflow.
+
+- Do not manually reproduce the replenishment workflow using
+  individual planning calculations.
+
+- Treat the structured output of
+  run_replenishment_workflow as the authoritative calculation
+  result.
+
+- Use get_latest_recommendation only when the user asks about
+  a previous or historical recommendation.
+
+- Current recommendations must use current operational data,
+  not recommendation memory.
+
+
+DONE:
+
+- Answer as soon as sufficient evidence is available.
+
+- For factual questions, return the requested facts without
+  unnecessary analysis.
+
+- For deterministic planning questions, return the calculated
+  result and relevant supporting facts.
+
+- For planning judgements or recommendations, use the required
+  business data, deterministic calculations and relevant
+  NovaTech policy evidence.
+
+- For replenishment recommendations, finish with one clear
+  primary action and, when applicable, one clear timing action.
+
+- If information is missing, state what is missing or ask the
+  smallest necessary clarification question rather than
+  guessing.
+""",
+
     tools=[
-
-        # High-level workflows
+        # High-level workflow
         run_replenishment_workflow,
 
-        # Memory
+        # Durable recommendation memory
         get_latest_recommendation,
 
-        # RAG
+        # Policy RAG
         search_docs,
 
-        # DB
+        # Database
         get_inventory,
         get_product_data,
         get_supplier_data,
@@ -364,89 +548,15 @@ root_agent = Agent(
 
 
 # --------------------------------------------------
-# SUPPLYPILOT ARCHITECTURE
-# --------------------------------------------------
-# **Evals & Memory/SKIlls
-
-
-# SupplyPilot Agent
-#     │
-#     ├── RESILIENT GEMINI MODEL
-#     │     │
-#     │     ├── Primary: gemini-3.6-flash
-#     │     ├── transient failure → retry after 2s
-#     │     ├── transient failure → retry after 4s
-#     │     └── still unavailable → gemini-2.5-flash fallback
-#     │
-#     ├── RETRIEVAL / DATA TOOLS
-#     │     │
-#     │     ├── RAG TOOL
-#     │     │     └── search_docs
-#     │     │           → Pinecone / NovaTech policies
-#     │     │
-#     │     └── DATABASE TOOLS — PostgreSQL
-#     │           ├── get_inventory
-#     │           │     → current stock
-#     │           ├── get_product_data
-#     │           │     → product + MOQ + order multiple + supplier
-#     │           ├── get_supplier_data
-#     │           │     → lead time + supplier details
-#     │           ├── get_forecast
-#     │           │     → future weekly demand
-#     │           ├── get_sales_history
-#     │           │     → historical sales
-#     │           └── get_open_pos
-#     │                 → open incoming supply + expected arrivals
-#     │
-#     └── DETERMINISTIC PLANNING TOOLS — Python
-#           ├── calculate_projected_inventory
-#           │     → projected inventory by week
-#           │     → unmet demand + carried unmet demand
-#           ├── calculate_forward_average_demand
-#           │     → rolling forward average weekly demand
-#           ├── calculate_projected_wos
-#           │     → projected Weeks of Supply (WOS)
-#           ├── calculate_target_inventory
-#           │     → target WOS converted into inventory units
-#           ├── calculate_gap_to_target
-#           │     → inventory above / below target
-#           ├── calculate_replenishment_requirement
-#           │     → below-target gap converted into required quantity
-#           ├── adjust_order_quantity
-#           │     → required quantity adjusted for MOQ + order multiple
-#           ├── detect_stockout_exposure
-#           │     → first stockout week + unmet-demand exposure
-#           ├── check_replenishment_arrival_risk
-#           │     → compares stockout timing vs standard lead-time arrival
-#           └── select_replenishment_planning_point
-#                 → authoritative replenishment planning point
-#
-# --------------------------------------------------
-# RUNNER
-# --------------------------------------------------
-#
-# event_callback is optional:
-# - normal run → event_callback=None
-# - POST /agent streaming UI → receives live events
-#
-# Existing events:
-# - llm_call
-# - act
-# - observe
-# - final
-# - error
-#
-# New resilience events:
-# - model_retry
-# - model_fallback
-#
+# RECOMMENDATION MEMORY WRITE GATE
 # --------------------------------------------------
 
-
-def recommendation_memory_write_gate(trace: dict) -> bool:
+def recommendation_memory_write_gate(
+    trace: dict,
+) -> bool:
     """
-    Decide deterministically whether this trace is safe to store
-    as validated replenishment memory.
+    Decide deterministically whether this trace is safe
+    to store as validated replenishment memory.
     """
 
     if trace.get("status") != "success":
@@ -455,19 +565,29 @@ def recommendation_memory_write_gate(trace: dict) -> bool:
     if not trace.get("assistant_output"):
         return False
 
-    tool_calls = trace.get("tool_calls", [])
+    tool_calls = trace.get(
+        "tool_calls",
+        [],
+    )
 
     workflow_observation = next(
         (
             item.get("observation")
             for item in tool_calls
             if item.get("type") == "observe"
-            and item.get("tool") == "run_replenishment_workflow"
+            and item.get("tool")
+            == "run_replenishment_workflow"
         ),
         None,
     )
 
     if not workflow_observation:
+        return False
+
+    if not isinstance(
+        workflow_observation,
+        dict,
+    ):
         return False
 
     required_fields = {
@@ -484,39 +604,72 @@ def recommendation_memory_write_gate(trace: dict) -> bool:
         "recommended_order_qty",
     }
 
-    if not required_fields.issubset(workflow_observation.keys()):
+    if not required_fields.issubset(
+        workflow_observation.keys()
+    ):
         return False
 
     return True
 
-def build_recommendation_memory(trace: dict) -> dict:
+
+# --------------------------------------------------
+# BUILD RECOMMENDATION MEMORY
+# --------------------------------------------------
+
+def build_recommendation_memory(
+    trace: dict,
+) -> dict:
     """
-    Build compact episodic replenishment memory from the validated
-    high-level replenishment workflow result.
+    Build compact episodic replenishment memory from
+    the validated high-level workflow observation.
     """
 
     workflow = next(
         item["observation"]
-        for item in trace.get("tool_calls", [])
+        for item in trace.get(
+            "tool_calls",
+            [],
+        )
         if item.get("type") == "observe"
-        and item.get("tool") == "run_replenishment_workflow"
+        and item.get("tool")
+        == "run_replenishment_workflow"
     )
 
     policy_ids = []
 
-    policy = workflow.get("policy", {})
+    policy = workflow.get(
+        "policy",
+        {},
+    )
 
-    for result in policy.get("results", []):
-        document_id = result.get("document_id")
+    for result in policy.get(
+        "results",
+        [],
+    ):
+        document_id = result.get(
+            "document_id"
+        )
 
-        if document_id and document_id not in policy_ids:
-            policy_ids.append(document_id)
+        if (
+            document_id
+            and document_id not in policy_ids
+        ):
+            policy_ids.append(
+                document_id
+            )
 
     return {
-        "sku": workflow["sku"],
-        "decision": workflow["decision"],
+        "sku":
+            workflow["sku"],
+
+        "decision":
+            workflow["decision"],
+
         "recommended_order_qty":
-            workflow.get("recommended_order_qty", 0),
+            workflow.get(
+                "recommended_order_qty",
+                0,
+            ),
 
         "decision_date":
             date.today().isoformat(),
@@ -528,299 +681,720 @@ def build_recommendation_memory(trace: dict) -> dict:
             workflow["planning_week"],
 
         "planning_week_start":
-            workflow.get("planning_week_start"),
+            workflow.get(
+                "planning_week_start"
+            ),
 
         "available_inventory_cw":
-            workflow.get("current_inventory"),
+            workflow.get(
+                "current_inventory"
+            ),
 
         "projected_inventory_planning_week":
-            workflow.get("projected_inventory"),
+            workflow.get(
+                "projected_inventory"
+            ),
 
         "forward_average_demand":
-            workflow.get("forward_average_demand"),
+            workflow.get(
+                "forward_average_demand"
+            ),
 
         "projected_wos":
-            workflow.get("projected_wos"),
+            workflow.get(
+                "projected_wos"
+            ),
 
         "target_wos":
-            workflow.get("target_wos"),
+            workflow.get(
+                "target_wos"
+            ),
 
         "target_inventory":
-            workflow.get("target_inventory"),
+            workflow.get(
+                "target_inventory"
+            ),
 
         "gap_to_target":
-            workflow.get("gap_to_target"),
+            workflow.get(
+                "gap_to_target"
+            ),
 
         "initial_replenishment_requirement":
-            workflow.get("initial_replenishment_requirement"),
+            workflow.get(
+                "initial_replenishment_requirement"
+            ),
 
         "moq":
-            workflow.get("moq"),
+            workflow.get(
+                "moq"
+            ),
 
         "order_multiple":
-            workflow.get("order_multiple"),
+            workflow.get(
+                "order_multiple"
+            ),
 
         "stockout_exposure":
-            workflow.get("stockout_exposure", False),
+            workflow.get(
+                "stockout_exposure",
+                False,
+            ),
 
         "first_stockout_week":
-            workflow.get("first_stockout_week"),
+            workflow.get(
+                "first_stockout_week"
+            ),
 
         "first_stockout_date":
-            workflow.get("first_stockout_date"),
+            workflow.get(
+                "first_stockout_date"
+            ),
 
         "first_stockout_unmet_demand":
-            workflow.get("first_stockout_unmet_demand"),
+            workflow.get(
+                "first_stockout_unmet_demand"
+            ),
 
         "standard_arrival_week":
-            workflow.get("standard_arrival_week"),
+            workflow.get(
+                "standard_arrival_week"
+            ),
 
         "arrival_risk":
-            workflow.get("arrival_risk", False),
+            workflow.get(
+                "arrival_risk",
+                False,
+            ),
 
         "stockout_gap_weeks":
-            workflow.get("stockout_gap_weeks", 0),
+            workflow.get(
+                "stockout_gap_weeks",
+                0,
+            ),
 
         "policy_ids":
             policy_ids,
 
-        "reason_summary":
-            (
-                f"At {workflow['planning_week']}, projected inventory is "
-                f"{workflow.get('projected_inventory')} units versus a target of "
-                f"{workflow.get('target_inventory')} units. "
-                f"Initial replenishment requirement is "
-                f"{workflow.get('initial_replenishment_requirement')} units and "
-                f"the valid recommended quantity after ordering constraints is "
-                f"{workflow.get('recommended_order_qty', 0)} units."
-            ),
+        "reason_summary": (
+            f"At {workflow['planning_week']}, "
+            f"projected inventory is "
+            f"{workflow.get('projected_inventory')} "
+            f"units versus a target of "
+            f"{workflow.get('target_inventory')} units. "
+            f"Initial replenishment requirement is "
+            f"{workflow.get('initial_replenishment_requirement')} "
+            f"units and the valid recommended quantity "
+            f"after ordering constraints is "
+            f"{workflow.get('recommended_order_qty', 0)} "
+            f"units."
+        ),
     }
 
-    
 
-async def run_agent(message: str, event_callback=None):
-    # Make the current SSE callback available to ResilientGemini for this
-    # request only.
-    callback_token = _CURRENT_EVENT_CALLBACK.set(event_callback)
+# --------------------------------------------------
+# SHARED ADK SESSION SERVICE
+# --------------------------------------------------
+#
+# IMPORTANT:
+#
+# This lives OUTSIDE run_agent().
+#
+# Therefore several HTTP requests can reuse the same
+# conversational ADK session when Streamlit sends the
+# same session_id.
+#
+# This is short-term CONVERSATION CONTEXT.
+#
+# It is NOT SupplyPilot's durable recommendation memory.
+# Durable recommendation memory lives in PostgreSQL.
+# --------------------------------------------------
 
-    # Create the ADK session and runner.
-    session_service = InMemorySessionService()
+session_service = InMemorySessionService()
 
-    runner = Runner(
-        agent=root_agent,
-        app_name="supplypilot",
-        session_service=session_service,
-    )
 
-    session = await session_service.create_session(
+# --------------------------------------------------
+# SHARED ADK RUNNER
+# --------------------------------------------------
+
+runner = Runner(
+    agent=root_agent,
+    app_name="supplypilot",
+    session_service=session_service,
+)
+
+
+# --------------------------------------------------
+# GET OR CREATE CONVERSATION SESSION
+# --------------------------------------------------
+
+async def get_or_create_agent_session(
+    session_id: str,
+):
+    """
+    Retrieve an existing ADK session if the current
+    Streamlit conversation has already used it.
+
+    Otherwise create it.
+
+    Same session_id:
+        preserves conversational context.
+
+    New session_id:
+        starts a fresh conversation.
+    """
+
+    session = await session_service.get_session(
         app_name="supplypilot",
         user_id="test_user",
+        session_id=session_id,
     )
 
-    # Convert the user message into ADK content.
-    content = types.Content(
-        role="user",
-        parts=[types.Part(text=message)],
+    if session is not None:
+        return session
+
+    return await session_service.create_session(
+        app_name="supplypilot",
+        user_id="test_user",
+        session_id=session_id,
     )
 
-    run_config = RunConfig(max_llm_calls=20)
 
-    # Initialize trace data before the agent starts.
+# --------------------------------------------------
+# RUN AGENT
+# --------------------------------------------------
+
+async def run_agent(
+    message: str,
+    session_id: str | None = None,
+    event_callback=None,
+):
+    """
+    Execute one SupplyPilot conversational turn.
+
+    session_id controls short-term conversational context.
+
+    Recommendation memory is handled separately through
+    PostgreSQL.
+    """
+
+    # Give ResilientGemini access to this request's
+    # streaming callback.
+    callback_token = (
+        _CURRENT_EVENT_CALLBACK.set(
+            event_callback
+        )
+    )
+
+    # Fallback for callers that do not supply a session ID.
+    if not session_id:
+        session_id = "default_session"
+
     final_response = None
     llm_calls = 0
     tool_calls = []
     retrieved_context = []
 
     trace = {
-        "user_input": message,
-        "retrieved_context": retrieved_context,
-        "tool_calls": tool_calls,
-        "assistant_output": None,
-        "llm_calls": 0,
-        "status": "running",
-        "error_message": None,
+        "user_input":
+            message,
+
+        "retrieved_context":
+            retrieved_context,
+
+        "tool_calls":
+            tool_calls,
+
+        "assistant_output":
+            None,
+
+        "llm_calls":
+            0,
+
+        "status":
+            "running",
+
+        "error_message":
+            None,
     }
 
     try:
-        # Run the agent and process its event stream.
+
+        # ------------------------------------------
+        # REUSE OR CREATE ADK SESSION
+        # ------------------------------------------
+
+        session = (
+            await get_or_create_agent_session(
+                session_id
+            )
+        )
+
+        # ------------------------------------------
+        # USER MESSAGE
+        # ------------------------------------------
+
+        content = types.Content(
+            role="user",
+            parts=[
+                types.Part(
+                    text=message
+                )
+            ],
+        )
+
+        run_config = RunConfig(
+            max_llm_calls=20
+        )
+
+        # ------------------------------------------
+        # ADK EVENT LOOP
+        # ------------------------------------------
+
         async for event in runner.run_async(
             user_id="test_user",
             session_id=session.id,
             new_message=content,
             run_config=run_config,
         ):
-            # Track each successful ADK LLM response event.
-            if getattr(event, "usage_metadata", None):
-                llm_calls += 1
-                trace["llm_calls"] = llm_calls
 
-                print(f"\nGEMINI CALL #{llm_calls}")
-                print("Usage:", event.usage_metadata)
+            # --------------------------------------
+            # LLM CALL
+            # --------------------------------------
+
+            if getattr(
+                event,
+                "usage_metadata",
+                None,
+            ):
+                llm_calls += 1
+
+                trace["llm_calls"] = (
+                    llm_calls
+                )
+
+                print(
+                    f"\nGEMINI CALL "
+                    f"#{llm_calls}"
+                )
+
+                print(
+                    "Usage:",
+                    event.usage_metadata,
+                )
 
                 if event_callback:
+
                     await event_callback(
                         {
-                            "type": "llm_call",
-                            "number": llm_calls,
+                            "type":
+                                "llm_call",
+
+                            "number":
+                                llm_calls,
                         }
                     )
 
-            if not event.content or not event.content.parts:
+            if (
+                not event.content
+                or not event.content.parts
+            ):
                 continue
 
-            for part in event.content.parts:
-                # ACT: record the tool selected by the agent.
-                if getattr(part, "function_call", None):
-                    tool_name = part.function_call.name
-                    arguments = part.function_call.args
+            # --------------------------------------
+            # CONTENT PARTS
+            # --------------------------------------
 
-                    print("\nACT")
-                    print(f"Tool: {tool_name}")
-                    print(f"Arguments: {arguments}")
+            for part in event.content.parts:
+
+                # ----------------------------------
+                # ACT
+                # ----------------------------------
+
+                if getattr(
+                    part,
+                    "function_call",
+                    None,
+                ):
+                    tool_name = (
+                        part.function_call.name
+                    )
+
+                    arguments = (
+                        part.function_call.args
+                    )
+
+                    print(
+                        "\nACT"
+                    )
+
+                    print(
+                        f"Tool: {tool_name}"
+                    )
+
+                    print(
+                        f"Arguments: {arguments}"
+                    )
 
                     tool_calls.append(
                         {
-                            "type": "act",
-                            "tool": tool_name,
-                            "arguments": arguments,
+                            "type":
+                                "act",
+
+                            "tool":
+                                tool_name,
+
+                            "arguments":
+                                arguments,
                         }
                     )
 
                     if event_callback:
+
                         await event_callback(
                             {
-                                "type": "act",
-                                "tool": tool_name,
-                                "arguments": arguments,
+                                "type":
+                                    "act",
+
+                                "tool":
+                                    tool_name,
+
+                                "arguments":
+                                    arguments,
                             }
                         )
 
-                # OBSERVE: record the result returned by the tool.
-                elif getattr(part, "function_response", None):
-                    tool_name = part.function_response.name
-                    result = part.function_response.response
-                    result_text = str(result)
+                # ----------------------------------
+                # OBSERVE
+                # ----------------------------------
 
-                    print("\nOBSERVE")
-                    print(f"Tool: {tool_name}")
-                    print(f"Result: {result}")
+                elif getattr(
+                    part,
+                    "function_response",
+                    None,
+                ):
+                    tool_name = (
+                        part.function_response.name
+                    )
 
+                    result = (
+                        part.function_response.response
+                    )
+
+                    result_text = str(
+                        result
+                    )
+
+                    print(
+                        "\nOBSERVE"
+                    )
+
+                    print(
+                        f"Tool: {tool_name}"
+                    )
+
+                    print(
+                        f"Result: {result}"
+                    )
+
+                    # Full result stays in trace.
                     tool_calls.append(
                         {
-                            "type": "observe",
-                            "tool": tool_name,
-                            "observation": result,
+                            "type":
+                                "observe",
+
+                            "tool":
+                                tool_name,
+
+                            "observation":
+                                result,
                         }
                     )
 
-                    # Store RAG evidence separately for grounding evaluation.
+                    # RAG evidence for evaluation.
                     if tool_name == "search_docs":
+
                         retrieved_context.append(
                             {
-                                "tool": tool_name,
-                                "context": result,
+                                "tool":
+                                    tool_name,
+
+                                "context":
+                                    result,
                             }
                         )
 
+                    # --------------------------------
+                    # UI SSE OBSERVE EVENT
+                    # --------------------------------
+
                     if event_callback:
+
                         display_result = (
-                            result_text[:500] + "..."
+                            result_text[:500]
+                            + "..."
                             if len(result_text) > 500
                             else result_text
                         )
 
+                        event_payload = {
+                            "type":
+                                "observe",
+
+                            "tool":
+                                tool_name,
+
+                            "observation":
+                                display_result,
+                        }
+
+                        # Streamlit can use the full
+                        # deterministic workflow result
+                        # for Show Calculation without
+                        # another Gemini call.
+                        if (
+                            tool_name
+                            == "run_replenishment_workflow"
+                        ):
+                            event_payload[
+                                "data"
+                            ] = result
+
                         await event_callback(
-                            {
-                                "type": "observe",
-                                "tool": tool_name,
-                                "observation": display_result,
-                            }
+                            event_payload
                         )
 
-                # FINAL: capture the agent's final answer.
-                elif getattr(part, "text", None) and event.is_final_response():
-                    final_response = part.text
-                    trace["assistant_output"] = final_response
+                # ----------------------------------
+                # FINAL
+                # ----------------------------------
 
-                    print("\nFINAL")
-                    print(final_response)
+                elif (
+                    getattr(
+                        part,
+                        "text",
+                        None,
+                    )
+                    and event.is_final_response()
+                ):
+                    final_response = (
+                        part.text
+                    )
+
+                    trace[
+                        "assistant_output"
+                    ] = final_response
+
+                    print(
+                        "\nFINAL"
+                    )
+
+                    print(
+                        final_response
+                    )
 
                     if event_callback:
+
                         await event_callback(
                             {
-                                "type": "final",
-                                "answer": final_response,
+                                "type":
+                                    "final",
+
+                                "answer":
+                                    final_response,
                             }
                         )
 
-        # A run is successful only if a final response was actually produced.
-        if final_response is not None and str(final_response).strip():
+        # ------------------------------------------
+        # SUCCESS / FAILED STATUS
+        # ------------------------------------------
+
+        if (
+            final_response is not None
+            and str(
+                final_response
+            ).strip()
+        ):
             trace["status"] = "success"
+
         else:
             trace["status"] = "failed"
+
             trace["error_message"] = (
-                "Agent run ended without producing a final response."
+                "Agent run ended without producing "
+                "a final response."
             )
 
-            print("\nAGENT FAILED")
-            print(trace["error_message"])
+            print(
+                "\nAGENT FAILED"
+            )
+
+            print(
+                trace[
+                    "error_message"
+                ]
+            )
 
             if event_callback:
+
                 await event_callback(
                     {
-                        "type": "error",
-                        "error": trace["error_message"],
+                        "type":
+                            "error",
+
+                        "message":
+                            trace[
+                                "error_message"
+                            ],
+
+                        "error":
+                            trace[
+                                "error_message"
+                            ],
                     }
                 )
 
-    except Exception as e:
-        # Preserve failed runs, including max-LLM-call failures and a
-        # fallback-model failure.
-        trace["status"] = "failed"
-        trace["error_message"] = str(e)
-        trace["assistant_output"] = final_response
-        trace["llm_calls"] = llm_calls
+    # --------------------------------------------------
+    # AGENT FAILURE
+    # --------------------------------------------------
 
-        print("\nAGENT FAILED")
-        print(str(e))
+    except Exception as exc:
+
+        trace["status"] = "failed"
+
+        trace["error_message"] = str(
+            exc
+        )
+
+        trace["assistant_output"] = (
+            final_response
+        )
+
+        trace["llm_calls"] = (
+            llm_calls
+        )
+
+        print(
+            "\nAGENT FAILED"
+        )
+
+        print(
+            str(exc)
+        )
 
         if event_callback:
+
             await event_callback(
                 {
-                    "type": "error",
-                    "error": str(e),
+                    "type":
+                        "error",
+
+                    "message":
+                        str(exc),
+
+                    # Retained for compatibility
+                    # with older clients/logs.
+                    "error":
+                        str(exc),
                 }
             )
 
+    # --------------------------------------------------
+    # TRACE + DURABLE RECOMMENDATION MEMORY
+    # --------------------------------------------------
+
     finally:
+
         try:
-            trace["llm_calls"] = llm_calls
 
-            ...
+            trace["llm_calls"] = (
+                llm_calls
+            )
 
-            trace_id = save_agent_trace(trace)
+            print(
+                f"\nTOTAL GEMINI CALLS: "
+                f"{llm_calls}"
+            )
+
+            print(
+                "\nTRACE"
+            )
+
+            print(
+                json.dumps(
+                    trace,
+                    indent=2,
+                    ensure_ascii=False,
+                    default=str,
+                )
+            )
+
+            # --------------------------------------
+            # SAVE TRACE
+            # --------------------------------------
+
+            trace_id = (
+                save_agent_trace(
+                    trace
+                )
+            )
+
+            # --------------------------------------
+            # SAVE RECOMMENDATION MEMORY
+            # --------------------------------------
 
             try:
-                if recommendation_memory_write_gate(trace):
-                    memory = build_recommendation_memory(trace)
 
-                    memory_id = save_recommendation_memory(
-                        memory=memory,
-                        trace_id=trace_id,
+                if (
+                    recommendation_memory_write_gate(
+                        trace
+                    )
+                ):
+                    memory = (
+                        build_recommendation_memory(
+                            trace
+                        )
                     )
 
-                    print(f"\nRECOMMENDATION MEMORY SAVED: {memory_id}")
+                    memory_id = (
+                        save_recommendation_memory(
+                            memory=memory,
+                            trace_id=trace_id,
+                        )
+                    )
+
+                    print(
+                        "\nRECOMMENDATION "
+                        "MEMORY SAVED: "
+                        f"{memory_id}"
+                    )
+
                 else:
-                    print("\nRECOMMENDATION MEMORY NOT SAVED")
+
+                    print(
+                        "\nRECOMMENDATION "
+                        "MEMORY NOT SAVED"
+                    )
 
             except Exception as memory_error:
-                print("\nRECOMMENDATION MEMORY SAVE FAILED")
-                print(str(memory_error))
 
+                # Memory persistence must never
+                # turn a successful agent answer
+                # into an API failure.
+                print(
+                    "\nRECOMMENDATION "
+                    "MEMORY SAVE FAILED"
+                )
 
+                print(
+                    str(memory_error)
+                )
 
         finally:
-            _CURRENT_EVENT_CALLBACK.reset(callback_token)
 
+            # Prevent this request's SSE callback
+            # leaking into another request context.
+            _CURRENT_EVENT_CALLBACK.reset(
+                callback_token
+            )
 
     return trace
