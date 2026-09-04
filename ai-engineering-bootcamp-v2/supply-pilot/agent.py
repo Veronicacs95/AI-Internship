@@ -896,6 +896,8 @@ async def run_agent(
     retrieved_context = []
 
     trace = {
+        "session_id": session_id,
+        
         "user_input":
             message,
 

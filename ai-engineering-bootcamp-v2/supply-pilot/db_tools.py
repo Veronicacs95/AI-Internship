@@ -372,10 +372,13 @@ def save_agent_trace(trace: dict) -> int:
     """
 
     with psycopg.connect(DATABASE_URL) as conn:
+
         with conn.cursor() as cursor:
+
             cursor.execute(
                 """
                 INSERT INTO agent_traces (
+                    session_id,
                     user_input,
                     retrieved_context,
                     tool_calls,
@@ -384,18 +387,19 @@ def save_agent_trace(trace: dict) -> int:
                     status,
                     error_message
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id;
                 """,
                 (
+                    trace.get("session_id"),
                     trace.get("user_input"),
                     json.dumps(
                         trace.get("retrieved_context", []),
-                        default=str
+                        default=str,
                     ),
                     json.dumps(
                         trace.get("tool_calls", []),
-                        default=str
+                        default=str,
                     ),
                     trace.get("assistant_output"),
                     trace.get("llm_calls", 0),
@@ -409,8 +413,6 @@ def save_agent_trace(trace: dict) -> int:
         conn.commit()
 
     return trace_id
-
-
 
 
 
