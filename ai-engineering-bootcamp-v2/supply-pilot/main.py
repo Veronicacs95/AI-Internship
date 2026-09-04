@@ -232,27 +232,29 @@ async def agent_endpoint(body: AgentRequest):
         async def execute_agent():
             try:
                 result = await run_agent(
-                                    body.message,
-                                    session_id=body.session_id,
-                                    event_callback=event_callback,
-                                )
-                    # run_agent already saves both successful and failed traces
-                    await queue.put({
-                        "type": "done",
-                        "llm_calls": result["llm_calls"],
-                        "status": result["status"]
-                    })
+                    body.message,
+                    session_id=body.session_id,
+                    event_callback=event_callback,
+                )
+
+                # run_agent already saves both successful and failed traces
+                await queue.put({
+                    "type": "done",
+                    "llm_calls": result["llm_calls"],
+                    "status": result["status"],
+                })
 
             except Exception as exc:
                 # Handle unexpected errors outside run_agent
                 await queue.put({
                     "type": "error",
-                    "message": str(exc)
+                    "message": str(exc),
                 })
 
             finally:
                 # Always signal the end of the SSE stream
                 await queue.put(None)
+
 
         # Start the agent without blocking the event stream
         task = asyncio.create_task(execute_agent())
