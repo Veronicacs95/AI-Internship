@@ -60,8 +60,8 @@ app = FastAPI(
 # --------------------------------------------------
 
 class AgentRequest(BaseModel):
-    """User message sent to the SupplyPilot ADK agent."""
     message: str
+    session_id: str | None = None
 
 
 class IngestRequest(BaseModel):
@@ -231,8 +231,11 @@ async def agent_endpoint(body: AgentRequest):
         # Run the agent in a separate async task
         async def execute_agent():
             try:
-                result = await run_agent(body.message, event_callback=event_callback)
-
+            result = await run_agent(
+                                body.message,
+                                session_id=body.session_id,
+                                event_callback=event_callback,
+                            )
                 # run_agent already saves both successful and failed traces
                 await queue.put({
                     "type": "done",

@@ -1,288 +1,769 @@
-"""Week 3 SupplyPilot Agent Streamlit demo.
+"""
+SupplyPilot Demo UI
 
-Run:
-    export API_BASE_URL=https://ai-internship-jfg1.onrender.com
+Phase 1:
+- Product-style navigation
+- Working SupplyPilot chat
+- Conversation continuity with session_id
+- New Session creates a fresh conversational session
+- Existing FastAPI /agent connection
+- Contextual follow-up buttons after replenishment answers
+- Other pages intentionally left empty for now
+
+Run locally:
+
+    export API_BASE_URL=http://127.0.0.1:8000
     streamlit run rag_demo.py
-
-Architecture:
-    Streamlit → FastAPI /agent on Render → Google ADK Agent
-    → DB tools + deterministic planning tools + search_docs → Pinecone
-
-Additional tabs:
-    /ingest → ingest/update policy documents
-    /health/pinecone → test Pinecone connection
-    /debug/retrieve → inspect RAG retrieval
 """
 
 import json
 import os
+import uuid
+
 import httpx
 import streamlit as st
 
-# --------------------------------------------------
-# PAGE SETUP
-# --------------------------------------------------
-
-st.set_page_config(page_title="SupplyPilot Agent", layout="wide")
-st.title("SupplyPilot — AI Supply Planning Agent")
-st.caption("Streamlit → FastAPI on Render → Google ADK → PostgreSQL + deterministic planning tools + Pinecone policy RAG")
-
-default_api_url = os.getenv("API_BASE_URL") or "http://127.0.0.1:8000"
-base_url = st.sidebar.text_input("FastAPI base URL", value=default_api_url)
-
-st.sidebar.markdown("### Backend")
-st.sidebar.code(base_url)
-st.sidebar.info("Streamlit is only the UI. Agent logic, tools, database access and RAG run in FastAPI / ADK.")
 
 # --------------------------------------------------
-# API HELPERS
+# PAGE CONFIG
 # --------------------------------------------------
 
-def stream_agent(base_url: str, message: str):
-    """Stream live events from POST /agent."""
+st.set_page_config(
+    page_title="SupplyPilot",
+    page_icon="📦",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+
+# --------------------------------------------------
+# STYLING
+# --------------------------------------------------
+
+st.markdown(
+    """
+    <style>
+
+    .stApp {
+        background: #ffffff;
+    }
+
+    .block-container {
+        padding-top: 1.7rem;
+        padding-bottom: 2rem;
+        max-width: 1250px;
+    }
+
+    /* Sidebar */
+    section[data-testid="stSidebar"] {
+        background: #071a33;
+        border-right: 1px solid #162a44;
+    }
+
+    section[data-testid="stSidebar"] * {
+        color: #f8fafc;
+    }
+
+    section[data-testid="stSidebar"] .stRadio label {
+        padding: 8px 6px;
+        border-radius: 7px;
+        font-size: 14px;
+    }
+
+    /* Hide Streamlit chrome */
+    #MainMenu {
+        visibility: hidden;
+    }
+
+    footer {
+        visibility: hidden;
+    }
+
+    header[data-testid="stHeader"] {
+        background: transparent;
+    }
+
+    /* App logo */
+    .supplypilot-logo {
+        font-size: 25px;
+        font-weight: 700;
+        padding: 4px 2px 18px 2px;
+        letter-spacing: -0.5px;
+    }
+
+    .supplypilot-logo span {
+        color: #3b82f6;
+    }
+
+    /* Page title */
+    .page-title {
+        font-size: 26px;
+        font-weight: 700;
+        margin-bottom: 2px;
+        color: #0f172a;
+    }
+
+    .page-subtitle {
+        color: #64748b;
+        font-size: 14px;
+        margin-bottom: 24px;
+    }
+
+    /* Chat messages */
+    div[data-testid="stChatMessage"] {
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 8px 12px;
+        margin-bottom: 10px;
+        background: white;
+    }
+
+    /* Chat input */
+    div[data-testid="stChatInput"] {
+        padding-top: 10px;
+    }
+
+    /* Footer */
+    .chat-footer {
+        text-align: center;
+        color: #94a3b8;
+        font-size: 11px;
+        margin-top: 10px;
+    }
+
+    /* Placeholder pages */
+    .coming-soon {
+        margin-top: 40px;
+        padding: 40px;
+        border: 1px dashed #cbd5e1;
+        border-radius: 10px;
+        color: #64748b;
+        text-align: center;
+    }
+
+    /* Calculation rows */
+    .calc-title {
+        font-size: 17px;
+        font-weight: 700;
+        color: #0f172a;
+        margin-top: 10px;
+        margin-bottom: 8px;
+    }
+
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+# --------------------------------------------------
+# API CONFIG
+# --------------------------------------------------
+
+API_BASE_URL = os.getenv(
+    "API_BASE_URL",
+    "http://127.0.0.1:8000",
+)
+
+
+# --------------------------------------------------
+# AGENT STREAM
+# --------------------------------------------------
+
+def stream_agent(
+    base_url: str,
+    message: str,
+    session_id: str,
+):
+    """
+    Stream events from FastAPI POST /agent.
+
+    The same session_id is reused for all questions
+    in the current Streamlit conversation.
+    """
+
     try:
         with httpx.stream(
             "POST",
             f"{base_url.rstrip('/')}/agent",
-            json={"message": message},
+            json={
+                "message": message,
+                "session_id": session_id,
+            },
             timeout=180.0,
         ) as response:
+
             if response.status_code != 200:
-                yield {"type": "http_error", "status": response.status_code, "message": response.read().decode()}
+                yield {
+                    "type": "http_error",
+                    "status": response.status_code,
+                    "message": response.read().decode(),
+                }
                 return
 
             for line in response.iter_lines():
+
                 if not line or not line.startswith("data:"):
                     continue
 
                 try:
-                    yield json.loads(line[5:].strip())
+                    yield json.loads(
+                        line[5:].strip()
+                    )
+
                 except json.JSONDecodeError:
-                    yield {"type": "error", "message": f"Invalid stream event: {line}"}
+                    yield {
+                        "type": "error",
+                        "message":
+                            f"Invalid stream event: {line}",
+                    }
 
     except httpx.HTTPError as exc:
-        yield {"type": "error", "message": str(exc)}
+        yield {
+            "type": "error",
+            "message": str(exc),
+        }
 
 
-def call_ingest(base_url: str, text: str, document_id: str, source: str | None = None):
-    payload = {"text": text, "document_id": document_id}
+# --------------------------------------------------
+# SESSION STATE
+# --------------------------------------------------
 
-    if source:
-        payload["source"] = source
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-    try:
-        response = httpx.post(f"{base_url.rstrip('/')}/ingest", json=payload, timeout=180.0)
-        return response.status_code, response.json()
-    except httpx.HTTPError as exc:
-        return 0, {"error": str(exc)}
+# This ID represents the current conversation.
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(
+        uuid.uuid4()
+    )
+
+if "last_tool" not in st.session_state:
+    st.session_state.last_tool = None
+
+if "last_workflow" not in st.session_state:
+    st.session_state.last_workflow = None
+
+if "show_calculation" not in st.session_state:
+    st.session_state.show_calculation = False
+
+if "show_quantity_reason" not in st.session_state:
+    st.session_state.show_quantity_reason = False
 
 
-def check_pinecone(base_url: str):
-    try:
-        response = httpx.get(f"{base_url.rstrip('/')}/health/pinecone", timeout=60.0)
-        return response.status_code, response.json()
-    except httpx.HTTPError as exc:
-        return 0, {"error": str(exc)}
+# --------------------------------------------------
+# SIDEBAR
+# --------------------------------------------------
 
+with st.sidebar:
 
-def debug_retrieve(base_url: str, question: str, top_k: int = 5):
-    try:
-        response = httpx.get(
-            f"{base_url.rstrip('/')}/debug/retrieve",
-            params={"question": question, "top_k": top_k},
-            timeout=120.0,
+    st.markdown(
+        """
+        <div class="supplypilot-logo">
+            <span>◆</span> SupplyPilot
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if st.button(
+        "＋  New Session",
+        use_container_width=True,
+        type="primary",
+    ):
+        # Clear visible conversation.
+        st.session_state.messages = []
+
+        # Create a genuinely fresh conversation.
+        st.session_state.session_id = str(
+            uuid.uuid4()
         )
-        return response.status_code, response.json()
-    except httpx.HTTPError as exc:
-        return 0, {"error": str(exc)}
+
+        # Clear temporary UI state.
+        st.session_state.last_tool = None
+        st.session_state.last_workflow = None
+        st.session_state.show_calculation = False
+        st.session_state.show_quantity_reason = False
+
+        st.rerun()
+
+    st.write("")
+
+    page = st.radio(
+        "Navigation",
+        [
+            "💬  Chat",
+            "✦  Recommendations",
+            "▣  Inventory",
+            "⌁  Forecast",
+            "▤  Purchase Orders",
+            "♙  Suppliers",
+            "◇  Products",
+            "▱  Policies",
+            "◉  Memory",
+            "◎  Evaluations",
+            "⚙  Settings",
+        ],
+        label_visibility="collapsed",
+    )
+
+    st.markdown("---")
+
+    st.markdown(
+        """
+        **P  Planner**
+
+        <span style="font-size:11px;color:#94a3b8">
+        Supply planning workspace
+        </span>
+        """,
+        unsafe_allow_html=True,
+    )
+
 
 # --------------------------------------------------
-# TABS
+# CHAT PAGE
 # --------------------------------------------------
 
-agent_tab, ingest_tab, pinecone_tab = st.tabs(["🤖 SupplyPilot Agent", "📄 Ingest Policy", "🔎 Pinecone Debug"])
+if page == "💬  Chat":
 
-# ==================================================
-# TAB 1 — SUPPLYPILOT AGENT
-# ==================================================
+    st.markdown(
+        '<div class="page-title">Chat</div>',
+        unsafe_allow_html=True,
+    )
 
-with agent_tab:
-    st.subheader("Ask SupplyPilot")
-    st.write("Enter a normal supply-planning question. SupplyPilot decides which tools are required.")
+    st.markdown(
+        """
+        <div class="page-subtitle">
+        Ask SupplyPilot anything about inventory
+        and supply planning.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    message = st.text_area("Task / Question", placeholder="Example: When will LAP-101 first run out of stock?", height=120)
+    # ----------------------------------------------
+    # Conversation history
+    # ----------------------------------------------
 
-    if st.button("Run SupplyPilot", type="primary", key="run_agent"):
-        if not message.strip():
-            st.error("Please enter a question.")
-        else:
+    for message in st.session_state.messages:
+
+        with st.chat_message(
+            message["role"]
+        ):
+            st.markdown(
+                message["content"]
+            )
+
+    # ----------------------------------------------
+    # Chat input
+    # ----------------------------------------------
+
+    prompt = st.chat_input(
+        "Ask SupplyPilot..."
+    )
+
+    # ----------------------------------------------
+    # New user question
+    # ----------------------------------------------
+
+    if prompt:
+
+        # Clear controls from previous answer.
+        st.session_state.last_tool = None
+        st.session_state.last_workflow = None
+        st.session_state.show_calculation = False
+        st.session_state.show_quantity_reason = False
+
+        # Save user message for UI history.
+        st.session_state.messages.append(
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        )
+
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # ------------------------------------------
+        # Assistant response
+        # ------------------------------------------
+
+        with st.chat_message(
+            "assistant"
+        ):
+
+            status_box = st.empty()
+
+            status_box.info(
+                "SupplyPilot is analysing..."
+            )
+
             final_answer = None
-            llm_calls = 0
-            tool_steps = []
+            last_tool = None
 
-            # One dynamic status line while the agent works
-            live_status = st.empty()
-            live_status.info("🧠 SupplyPilot is thinking...")
+            for event in stream_agent(
+                API_BASE_URL,
+                prompt,
+                st.session_state.session_id,
+            ):
 
-            for event in stream_agent(base_url, message):
-                event_type = event.get("type")
+                event_type = event.get(
+                    "type"
+                )
 
-                if event_type == "llm_call":
-                    llm_calls = event.get("number", llm_calls)
-                    live_status.info("🧠 SupplyPilot is thinking...")
+                # ----------------------------------
+                # ACT
+                # ----------------------------------
 
-                elif event_type == "act":
-                    tool_name = event.get("tool", "Unknown tool")
-                    arguments = event.get("arguments", {})
-                    live_status.info(f"🔧 Running {tool_name}...")
+                if event_type == "act":
+
+                    last_tool = event.get(
+                        "tool",
+                        "planning workflow",
+                    )
+
+                    st.session_state.last_tool = (
+                        last_tool
+                    )
+
+                    status_box.info(
+                        f"Running {last_tool}..."
+                    )
+
+                # ----------------------------------
+                # OBSERVE
+                # ----------------------------------
 
                 elif event_type == "observe":
-                    tool_name = event.get("tool", "Unknown tool")
-                    observation = event.get("observation", "No observation returned.")
-                    tool_steps.append({"tool": tool_name, "observation": observation})
-                    live_status.info(f"✅ {tool_name} completed. Thinking about the next step...")
+
+                    tool_name = event.get(
+                        "tool",
+                        last_tool,
+                    )
+
+                    st.session_state.last_tool = (
+                        tool_name
+                    )
+
+                    if (
+                        tool_name
+                        == "run_replenishment_workflow"
+                    ):
+
+                        workflow_data = (
+                            event.get("data")
+                        )
+
+                        if workflow_data:
+                            st.session_state.last_workflow = (
+                                workflow_data
+                            )
+
+                        status_box.success(
+                            "✓ Replenishment workflow completed"
+                        )
+
+                    else:
+
+                        status_box.info(
+                            "Reviewing planning data..."
+                        )
+
+                # ----------------------------------
+                # MODEL RETRY
+                # ----------------------------------
+
+                elif event_type == "model_retry":
+
+                    status_box.warning(
+                        "Model temporarily busy — retrying..."
+                    )
+
+                # ----------------------------------
+                # MODEL FALLBACK
+                # ----------------------------------
+
+                elif event_type == "model_fallback":
+
+                    status_box.warning(
+                        "Using fallback model..."
+                    )
+
+                # ----------------------------------
+                # FINAL
+                # ----------------------------------
 
                 elif event_type == "final":
-                    final_answer = event.get("answer", "No answer returned.")
-                    live_status.info("🧠 Preparing final answer...")
 
-                elif event_type == "done":
-                    llm_calls = event.get("llm_calls", llm_calls)
-                    live_status.success("✅ SupplyPilot analysis complete")
+                    final_answer = event.get(
+                        "answer",
+                        "No answer returned.",
+                    )
+
+                # ----------------------------------
+                # HTTP ERROR
+                # ----------------------------------
 
                 elif event_type == "http_error":
-                    live_status.error(f"Agent API error — HTTP {event.get('status')}")
-                    st.error(event.get("message", "Unknown API error."))
+
+                    status_box.error(
+                        f"API error — HTTP "
+                        f"{event.get('status')}"
+                    )
+
+                    st.error(
+                        event.get(
+                            "message",
+                            "Unknown API error.",
+                        )
+                    )
+
                     break
+
+                # ----------------------------------
+                # AGENT ERROR
+                # ----------------------------------
 
                 elif event_type == "error":
-                    live_status.error("Agent execution failed.")
-                    st.error(event.get("message", "Unknown agent error."))
+
+                    status_box.error(
+                        "SupplyPilot could not "
+                        "complete the request."
+                    )
+
+                    st.error(
+                        event.get(
+                            "message",
+                            "Unknown error.",
+                        )
+                    )
+
                     break
 
+            # --------------------------------------
+            # Render final answer
+            # --------------------------------------
+
             if final_answer:
-                st.markdown("## Final Answer")
-                st.success(final_answer)
 
-                col1, col2 = st.columns(2)
-                col1.metric("Tool executions", len(tool_steps))
-                col2.metric("Gemini calls", llm_calls)
+                status_box.success(
+                    "✓ Analysis complete"
+                )
 
-                # Detailed trace stays hidden unless you want to inspect it
-                with st.expander("🔍 View Agent Execution Trace"):
-                    for index, step in enumerate(tool_steps, start=1):
-                        st.markdown(f"### Step {index}")
-                        st.markdown(f"**ACT — Tool:** `{step['tool']}`")
-                        st.markdown("**OBSERVE — Result:**")
-                        st.code(step["observation"], language="json")
+                st.markdown(
+                    final_answer
+                )
 
+                st.session_state.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": final_answer,
+                    }
+                )
 
-# ==================================================
-# TAB 2 — INGEST POLICY
-# ==================================================
+    # --------------------------------------------------
+    # CONTEXTUAL FOLLOW-UP CONTROLS
+    # --------------------------------------------------
 
-with ingest_tab:
-    st.subheader("Ingest / Update a Policy Document")
-    st.write("Send policy text to the live FastAPI `/ingest` endpoint for Pinecone indexing.")
+    if (
+        st.session_state.last_tool
+        == "run_replenishment_workflow"
+        and st.session_state.last_workflow
+    ):
 
-    document_id = st.text_input("Document ID", placeholder="Example: POL-106", key="document_id")
-    source = st.text_input(
-        "Source filename (optional)",
-        placeholder="Example: POL-106_lead_time_stockout_expedite.txt",
-        key="source",
-    )
-    document_text = st.text_area(
-        "Document text",
-        height=300,
-        placeholder="Paste the policy document here...",
-        key="document_text",
-    )
+        st.write("")
 
-    if st.button("Ingest document", type="primary", key="ingest_document"):
-        if not document_text.strip():
-            st.error("Document text cannot be empty.")
-        elif not document_id.strip():
-            st.error("Document ID cannot be empty.")
-        else:
-            with st.spinner("Indexing document in Pinecone..."):
-                status, data = call_ingest(base_url, document_text, document_id, source or None)
+        col1, col2 = st.columns(2)
 
-            if status == 200:
-                st.success("Document indexed successfully.")
+        if col1.button(
+            "Show calculation",
+            use_container_width=True,
+            key="show_calculation_button",
+        ):
+            st.session_state.show_calculation = (
+                not st.session_state.show_calculation
+            )
 
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Document ID", data.get("document_id", "Unknown"))
-                col2.metric("Chunks indexed", data.get("chunks_indexed", 0))
-                col3.metric("Status", data.get("status", "Unknown"))
+        if col2.button(
+            "Why this quantity?",
+            use_container_width=True,
+            key="show_quantity_reason_button",
+        ):
+            st.session_state.show_quantity_reason = (
+                not st.session_state.show_quantity_reason
+            )
 
-                with st.expander("Full API response"):
-                    st.json(data)
+    # --------------------------------------------------
+    # CALCULATION DETAILS
+    # --------------------------------------------------
 
-            elif status:
-                st.error(f"API returned HTTP {status}")
-                st.json(data)
-
-            else:
-                st.error("Could not reach FastAPI.")
-                st.json(data)
-
-# ==================================================
-# TAB 3 — PINECONE DEBUG
-# ==================================================
-
-with pinecone_tab:
-    st.subheader("Pinecone Connection & Retrieval")
-
-    st.markdown("### Pinecone Health")
-
-    if st.button("Check Pinecone", key="check_pinecone"):
-        with st.spinner("Checking Pinecone..."):
-            status, data = check_pinecone(base_url)
-
-        if status == 200:
-            st.success("Pinecone connection is healthy.")
-
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Index", data.get("index", "Unknown"))
-            col2.metric("Dimension", data.get("dimension", "Unknown"))
-            col3.metric("Vectors", data.get("total_vector_count", 0))
-
-        else:
-            st.error("Pinecone health check failed.")
-            st.json(data)
-
-    st.markdown("### Test Policy Retrieval")
-
-    retrieval_question = st.text_input(
-        "Policy retrieval query",
-        placeholder="Example: When should an order be expedited?",
-        key="retrieval_question",
+    workflow = (
+        st.session_state.last_workflow
     )
 
-    top_k = st.slider("Top K", min_value=1, max_value=10, value=5)
+    if (
+        workflow
+        and st.session_state.show_calculation
+    ):
 
-    if st.button("Retrieve from Pinecone", key="retrieve_pinecone"):
-        if not retrieval_question.strip():
-            st.error("Enter a retrieval query.")
-        else:
-            with st.spinner("Searching Pinecone..."):
-                status, data = debug_retrieve(base_url, retrieval_question, top_k)
+        st.markdown(
+            """
+            <div class="calc-title">
+            How this was calculated
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-            if status == 200:
-                st.success(f"Retrieved {len(data)} chunks.")
+        rows = [
+            (
+                "Current inventory",
+                f"{workflow.get('current_inventory', '—')} units",
+            ),
+            (
+                "Planning point",
+                workflow.get(
+                    "planning_week",
+                    "—",
+                ),
+            ),
+            (
+                "Projected inventory",
+                f"{workflow.get('projected_inventory', '—')} units",
+            ),
+            (
+                "Forward average demand",
+                f"{workflow.get('forward_average_demand', '—')} units/week",
+            ),
+            (
+                "Projected WOS",
+                workflow.get(
+                    "projected_wos",
+                    "—",
+                ),
+            ),
+            (
+                "Target WOS",
+                workflow.get(
+                    "target_wos",
+                    "—",
+                ),
+            ),
+            (
+                "Target inventory",
+                f"{workflow.get('target_inventory', '—')} units",
+            ),
+            (
+                "Gap to target",
+                f"{workflow.get('gap_to_target', '—')} units",
+            ),
+            (
+                "Initial replenishment requirement",
+                f"{workflow.get('initial_replenishment_requirement', '—')} units",
+            ),
+            (
+                "MOQ",
+                f"{workflow.get('moq', '—')} units",
+            ),
+            (
+                "Order multiple",
+                f"{workflow.get('order_multiple', '—')} units",
+            ),
+            (
+                "Final recommended quantity",
+                f"{workflow.get('recommended_order_qty', '—')} units",
+            ),
+        ]
 
-                for index, chunk in enumerate(data, start=1):
-                    document_id = chunk.get("document_id", "Unknown")
-                    score = chunk.get("score", 0)
+        for label, value in rows:
 
-                    with st.expander(f"{index}. {document_id} — score {score:.3f}"):
-                        st.write(chunk.get("chunk_text", ""))
-                        st.caption(f"Source: {chunk.get('source', 'Unknown')}")
+            left, right = st.columns(
+                [2, 1]
+            )
 
-            elif status:
-                st.error(f"Retrieval API returned HTTP {status}")
-                st.json(data)
+            left.write(label)
 
-            else:
-                st.error("Could not reach FastAPI.")
-                st.json(data)
+            right.markdown(
+                f"**{value}**"
+            )
+
+    # --------------------------------------------------
+    # WHY THIS QUANTITY?
+    # --------------------------------------------------
+
+    if (
+        workflow
+        and st.session_state.show_quantity_reason
+    ):
+
+        required_qty = workflow.get(
+            "initial_replenishment_requirement"
+        )
+
+        moq = workflow.get(
+            "moq"
+        )
+
+        order_multiple = workflow.get(
+            "order_multiple"
+        )
+
+        final_qty = workflow.get(
+            "recommended_order_qty"
+        )
+
+        st.info(
+            f"The initial replenishment requirement is "
+            f"{required_qty} units. "
+            f"The supplier requires an MOQ of "
+            f"{moq} units and orders in multiples of "
+            f"{order_multiple}. "
+            f"Therefore the first valid order quantity is "
+            f"{final_qty} units."
+        )
+
+    # --------------------------------------------------
+    # CHAT FOOTER
+    # --------------------------------------------------
+
+    st.markdown(
+        """
+        <div class="chat-footer">
+        SupplyPilot can make mistakes.
+        Validate critical planning decisions.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# --------------------------------------------------
+# OTHER PAGES — PHASE 2+
+# --------------------------------------------------
+
+else:
+
+    page_name = (
+        page.split("  ", 1)[1]
+        if "  " in page
+        else page
+    )
+
+    st.markdown(
+        f'<div class="page-title">'
+        f'{page_name}'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class="coming-soon">
+        This workspace will be added
+        in the next step.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
